@@ -1,0 +1,13 @@
+{
+  "update_date": "2024-05-14 12:30",
+  "xray_tested_version": "1.8.9",
+  "nginx_tested_version": "1.24.0",
+  "openssl_tested_version": "3.1.5",
+  "jemalloc_tested_version": "5.3.0",
+  "shell_online_version": "1.9.5.10",
+  "xray_online_version": "1.8.11",
+  "nginx_online_version": "1.24.0",
+  "openssl_online_version": "3.1.5",
+  "jemalloc_online_version": "5.3.0",
+  "xray_online_pre_version": "1.8.11"
+}
