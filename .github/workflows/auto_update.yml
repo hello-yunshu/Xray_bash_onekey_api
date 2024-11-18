@@ -6,6 +6,20 @@ on:
     - cron: '0 */2 * * *'
 
 jobs:
+  del_runs:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Delete workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 3
+          keep_minimum_runs: 3
+          
   Auto-Update:
     runs-on: ubuntu-latest
     permissions:
@@ -13,7 +27,7 @@ jobs:
       pull-requests: write
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@main
 
     - name: Install jq curl
       run: sudo apt-get update && sudo apt-get install -y jq curl
