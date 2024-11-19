@@ -25,7 +25,7 @@ if [[ ${shell_online_version} != '' ]] && [[ ${xray_online_version} != '' ]] && 
         echo -e "更新版本完成"
     else
         echo -e "无需更新版本"
-        exit 1
+        exit 3
     fi
 else
     echo -e "无法更新版本"
