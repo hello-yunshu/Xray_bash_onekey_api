@@ -9,6 +9,7 @@ declare -A tested_versions=(
     ["nginx"]="1.26.1"
     ["openssl"]="3.3.1"
     ["jemalloc"]="5.3.0"
+    ["nginx_build"]="2024.12.10"
 )
 
 # 获取在线版本
@@ -19,6 +20,7 @@ online_versions["xray"]=$(curl -s https://api.github.com/repos/XTLS/Xray-core/re
 online_versions["nginx"]=$(curl -s https://api.github.com/repos/nginx/nginx/tags | jq -r .[].name | sed 's/release-//g' | grep "1\.[0-9][02468]\.*" | head -1)
 online_versions["openssl"]=$(curl -s https://api.github.com/repos/openssl/openssl/tags | jq -r .[].name | grep "3\.[0-9]\.[0-9]" | grep -v "3\.[0-9]\.[0-9]-" | awk -F '-' '{print $2}' | head -1)
 online_versions["jemalloc"]=$(curl -s https://api.github.com/repos/jemalloc/jemalloc/releases/latest | jq -r .tag_name | head -1)
+online_versions["nginx_build"]=$(curl -s https://api.github.com/repos/hello-yunshu/Xray_bash_onekey_Nginx/releases/latest | jq -r '.tag_name' | sed 's/v//g')
 
 # 检查是否所有在线版本都已成功获取
 for key in "${!online_versions[@]}"; do
@@ -35,7 +37,7 @@ current_versions=$(cat ${online_version_file})
 update_required=false
 
 # 构建新的 JSON 数据
-new_json="{\"update_date\": \"$(date '+%Y-%m-%d %H:%M')\""
+new_json="{\"update_date\": \"$(date '+%Y-%m-%d %H:%M')\"}"
 
 for key in "${!tested_versions[@]}"; do
     current_value=$(echo "$current_versions" | jq -r ".${key}_online_version")
