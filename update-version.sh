@@ -37,7 +37,7 @@ current_versions=$(cat ${online_version_file})
 update_required=false
 
 # 构建新的 JSON 数据
-new_json="{\"update_date\": \"$(date '+%Y-%m-%d %H:%M')\"}"
+new_json="{\"update_date\": \"$(date '+%Y-%m-%d %H:%M')\""
 
 for key in "${!tested_versions[@]}"; do
     current_value=$(echo "$current_versions" | jq -r ".${key}_online_version")
