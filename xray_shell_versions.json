@@ -1,7 +1,7 @@
 {
-  "update_date": "2024-12-14 20:15",
+  "update_date": "2024-12-14 22:14",
   "shell_tested_version": "1.8.13",
-  "shell_online_version": "2.2.2",
+  "shell_online_version": "2.2.3",
   "nginx_build_tested_version": "2024.12.10",
   "nginx_build_online_version": "2024.12.12",
   "nginx_tested_version": "1.26.1",
