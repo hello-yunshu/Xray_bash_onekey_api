@@ -1,9 +1,9 @@
 {
-  "update_date": "2025-02-05 18:19",
+  "update_date": "2025-02-05 22:13",
   "shell_tested_version": "1.8.13",
   "shell_online_version": "2.3.3",
   "nginx_build_tested_version": "2024.12.10",
-  "nginx_build_online_version": "2024.12.12",
+  "nginx_build_online_version": "2025.02.05",
   "nginx_tested_version": "1.26.1",
   "nginx_online_version": "1.26.3",
   "xray_tested_version": "1.8.13",
