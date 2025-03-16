@@ -4,12 +4,12 @@ online_version_file="./xray_shell_versions.json"
 
 # 定义测试版本
 declare -A tested_versions=(
-    ["shell"]="1.8.13"
-    ["xray"]="1.8.13"
-    ["nginx"]="1.26.1"
-    ["openssl"]="3.3.1"
+    ["shell"]="2.4.2"
+    ["xray"]="25.3.6"
+    ["nginx"]="1.26.3"
+    ["openssl"]="3.4.1"
     ["jemalloc"]="5.3.0"
-    ["nginx_build"]="2024.12.10"
+    ["nginx_build"]="2025.02.11"
 )
 
 # 获取在线版本
