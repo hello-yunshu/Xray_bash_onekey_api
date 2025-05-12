@@ -4,12 +4,12 @@ online_version_file="./xray_shell_versions.json"
 
 # 定义测试版本
 declare -A tested_versions=(
-    ["shell"]="2.4.2"
-    ["xray"]="25.3.6"
-    ["nginx"]="1.26.3"
-    ["openssl"]="3.4.1"
+    ["shell"]="2.5.5"
+    ["xray"]="25.4.30"
+    ["nginx"]="1.28.0"
+    ["openssl"]="3.5.0"
     ["jemalloc"]="5.3.0"
-    ["nginx_build"]="2025.02.11"
+    ["nginx_build"]="2025.04.27"
 )
 
 # 获取在线版本
@@ -21,6 +21,9 @@ online_versions["nginx"]=$(curl -s https://api.github.com/repos/nginx/nginx/tags
 online_versions["openssl"]=$(curl -s https://api.github.com/repos/openssl/openssl/tags | jq -r .[].name | grep "3\.[0-9]\.[0-9]" | grep -v "3\.[0-9]\.[0-9]-" | awk -F '-' '{print $2}' | head -1)
 online_versions["jemalloc"]=$(curl -s https://api.github.com/repos/jemalloc/jemalloc/releases/latest | jq -r .tag_name | head -1)
 online_versions["nginx_build"]=$(curl -s https://api.github.com/repos/hello-yunshu/Xray_bash_onekey_Nginx/releases/latest | jq -r '.tag_name' | sed 's/v//g')
+
+# 获取最新的 shell 升级信息
+shell_upgrade_details=$(curl -s https://api.github.com/repos/hello-yunshu/Xray_bash_onekey/commits | jq '.[] | select(.author.login == "hello-yunshu") | .commit.message' -r | head -n 1)
 
 # 检查是否所有在线版本都已成功获取
 for key in "${!online_versions[@]}"; do
@@ -37,7 +40,7 @@ current_versions=$(cat ${online_version_file})
 update_required=false
 
 # 构建新的 JSON 数据
-new_json="{\"update_date\": \"$(date '+%Y-%m-%d %H:%M')\""
+new_json="{\"update_date\": \"$(date '+%Y-%m-%d %H:%M')\", \"shell_upgrade_details\": \"$shell_upgrade_details\""
 
 for key in "${!tested_versions[@]}"; do
     current_value=$(echo "$current_versions" | jq -r ".${key}_online_version")
