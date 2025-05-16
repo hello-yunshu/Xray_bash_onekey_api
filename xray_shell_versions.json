@@ -1,5 +1,5 @@
 {
-  "update_date": "2025-05-12 22:36",
+  "update_date": "2025-05-16 14:15",
   "shell_upgrade_details": "ADD upgrade details display",
   "shell_tested_version": "2.5.5",
   "shell_online_version": "2.5.6",
@@ -8,7 +8,7 @@
   "nginx_tested_version": "1.28.0",
   "nginx_online_version": "1.28.0",
   "xray_tested_version": "25.4.30",
-  "xray_online_version": "25.4.30",
+  "xray_online_version": "25.5.16",
   "jemalloc_tested_version": "5.3.0",
   "jemalloc_online_version": "5.3.0",
   "openssl_tested_version": "3.5.0",
