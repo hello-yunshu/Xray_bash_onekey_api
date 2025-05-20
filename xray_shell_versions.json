@@ -1,10 +1,10 @@
 {
-  "update_date": "2025-05-19 06:25",
+  "update_date": "2025-05-20 20:18",
   "shell_upgrade_details": "ADD upgrade details display",
   "shell_tested_version": "2.5.5",
   "shell_online_version": "2.5.6",
   "nginx_build_tested_version": "2025.04.27",
-  "nginx_build_online_version": "2025.05.19",
+  "nginx_build_online_version": "2025.05.20",
   "nginx_tested_version": "1.28.0",
   "nginx_online_version": "1.28.0",
   "xray_tested_version": "25.4.30",
