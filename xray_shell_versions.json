@@ -1,8 +1,8 @@
 {
-  "update_date": "2025-05-22 08:21",
-  "shell_upgrade_details": "Optimize nginx SSL configuration",
+  "update_date": "2025-05-22 10:18",
+  "shell_upgrade_details": "Optimize the xray upgrade process",
   "shell_tested_version": "2.5.5",
-  "shell_online_version": "2.5.7",
+  "shell_online_version": "2.5.8",
   "nginx_build_tested_version": "2025.04.27",
   "nginx_build_online_version": "2025.05.22",
   "nginx_tested_version": "1.28.0",
