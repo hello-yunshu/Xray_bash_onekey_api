@@ -1,10 +1,10 @@
 {
-  "update_date": "2025-05-21 08:21",
+  "update_date": "2025-05-22 08:21",
   "shell_upgrade_details": "Optimize nginx SSL configuration",
   "shell_tested_version": "2.5.5",
   "shell_online_version": "2.5.7",
   "nginx_build_tested_version": "2025.04.27",
-  "nginx_build_online_version": "2025.05.21",
+  "nginx_build_online_version": "2025.05.22",
   "nginx_tested_version": "1.28.0",
   "nginx_online_version": "1.28.0",
   "xray_tested_version": "25.4.30",
