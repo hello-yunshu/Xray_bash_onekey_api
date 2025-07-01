@@ -1,10 +1,10 @@
 {
-  "update_date": "2025-07-01 12:35",
+  "update_date": "2025-07-01 14:16",
   "shell_upgrade_details": "Update Telegram group links in README files",
   "shell_tested_version": "2.5.5",
   "shell_online_version": "2.5.8",
   "nginx_build_tested_version": "2025.04.27",
-  "nginx_build_online_version": "2025.05.22",
+  "nginx_build_online_version": "2025.07.01",
   "nginx_tested_version": "1.28.0",
   "nginx_online_version": "1.28.0",
   "xray_tested_version": "25.4.30",
