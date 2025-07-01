@@ -1,6 +1,6 @@
 {
-  "update_date": "2025-06-10 04:24",
-  "shell_upgrade_details": "Optimize the xray upgrade process",
+  "update_date": "2025-07-01 12:35",
+  "shell_upgrade_details": "Update Telegram group links in README files",
   "shell_tested_version": "2.5.5",
   "shell_online_version": "2.5.8",
   "nginx_build_tested_version": "2025.04.27",
@@ -12,5 +12,5 @@
   "jemalloc_tested_version": "5.3.0",
   "jemalloc_online_version": "5.3.0",
   "openssl_tested_version": "3.5.0",
-  "openssl_online_version": "3.5.0"
+  "openssl_online_version": "3.5.1"
 }
