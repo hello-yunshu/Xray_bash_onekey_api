@@ -1,8 +1,8 @@
 {
-  "update_date": "2025-07-01 14:16",
-  "shell_upgrade_details": "Update Telegram group links in README files",
+  "update_date": "2025-07-06 20:17",
+  "shell_upgrade_details": "Bump shell version to 2.5.9 and update IPv6 labels",
   "shell_tested_version": "2.5.5",
-  "shell_online_version": "2.5.8",
+  "shell_online_version": "2.5.9",
   "nginx_build_tested_version": "2025.04.27",
   "nginx_build_online_version": "2025.07.01",
   "nginx_tested_version": "1.28.0",
