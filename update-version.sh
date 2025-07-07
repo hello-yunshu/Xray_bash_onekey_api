@@ -4,12 +4,12 @@ online_version_file="./xray_shell_versions.json"
 
 # 定义测试版本
 declare -A tested_versions=(
-    ["shell"]="2.5.5"
-    ["xray"]="25.4.30"
+    ["shell"]="2.5.9"
+    ["xray"]="25.6.8"
     ["nginx"]="1.28.0"
-    ["openssl"]="3.5.0"
+    ["openssl"]="3.5.1"
     ["jemalloc"]="5.3.0"
-    ["nginx_build"]="2025.04.27"
+    ["nginx_build"]="2025.07.01"
 )
 
 # 获取在线版本
@@ -22,9 +22,6 @@ online_versions["openssl"]=$(curl -s https://api.github.com/repos/openssl/openss
 online_versions["jemalloc"]=$(curl -s https://api.github.com/repos/jemalloc/jemalloc/releases/latest | jq -r .tag_name | head -1)
 online_versions["nginx_build"]=$(curl -s https://api.github.com/repos/hello-yunshu/Xray_bash_onekey_Nginx/releases/latest | jq -r '.tag_name' | sed 's/v//g')
 
-# 获取最新的 shell 升级信息
-shell_upgrade_details=$(curl -s https://api.github.com/repos/hello-yunshu/Xray_bash_onekey/commits | jq '.[] | select(.author.login == "hello-yunshu") | .commit.message' -r | head -n 1)
-
 # 检查是否所有在线版本都已成功获取
 for key in "${!online_versions[@]}"; do
     if [[ ${online_versions[$key]} == '' ]]; then
@@ -36,12 +33,11 @@ done
 # 加载现有版本文件
 current_versions=$(cat ${online_version_file})
 
-# 初始化更新标志
+# 初始化更新标志和 JSON 数据
 update_required=false
+new_json="{\"update_date\": \"$(date '+%Y-%m-%d %H:%M')\", \"shell_upgrade_details\": \"\"}"
 
-# 构建新的 JSON 数据
-new_json="{\"update_date\": \"$(date '+%Y-%m-%d %H:%M')\", \"shell_upgrade_details\": \"$shell_upgrade_details\""
-
+# 检查每个组件的版本
 for key in "${!tested_versions[@]}"; do
     current_value=$(echo "$current_versions" | jq -r ".${key}_online_version")
     new_value=${online_versions[$key]}
@@ -52,10 +48,17 @@ for key in "${!tested_versions[@]}"; do
     # 检查是否需要更新
     if [[ ${current_value} != ${new_value} ]]; then
         update_required=true
+        if [[ $key == "shell" ]]; then
+            shell_upgrade_details=$(curl -s https://api.github.com/repos/hello-yunshu/Xray_bash_onekey/commits | jq '.[] | select(.author.login == "hello-yunshu") | .commit.message' -r | head -n 1)
+            new_json="${new_json},\"shell_upgrade_details\": \"$shell_upgrade_details\""
+        fi
+    else
+        if [[ $key == "shell" ]]; then
+            existing_upgrade_details=$(echo "$current_versions" | jq -r ".shell_upgrade_details")
+            new_json="${new_json},\"shell_upgrade_details\": \"$existing_upgrade_details\""
+        fi
     fi
 done
-
-new_json="${new_json}}"
 
 # 如果需要更新，则执行更新操作
 if $update_required; then
