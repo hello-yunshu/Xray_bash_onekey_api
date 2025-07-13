@@ -60,6 +60,9 @@ for key in "${!tested_versions[@]}"; do
     fi
 done
 
+# 移除多余的逗号
+new_json=$(echo "$new_json" | sed 's/,}/}/')
+
 # 如果需要更新，则执行更新操作
 if $update_required; then
     echo "$new_json" | jq . >${online_version_file}
