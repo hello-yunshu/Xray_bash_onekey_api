@@ -32,13 +32,32 @@ jobs:
     - name: Install jq curl
       run: sudo apt-get update && sudo apt-get install -y jq curl
     
-    - name: Make script executable
-      run: chmod +x update-version.sh
+    - name: Make scripts executable
+      run: chmod +x update-version.sh validate-json.sh
+    
+    - name: Backup xray_shell_versions.json
+      run: cp xray_shell_versions.json xray_shell_versions_backup.json
     
     - name: Run script
       run: bash update-version.sh
         
+    - name: Validate updated JSON
+      id: validate_json
+      run: |
+        ./validate-json.sh
+        if [ $? -ne 0 ]; then
+          echo "Validation failed. Restoring backup..."
+          mv xray_shell_versions_backup.json xray_shell_versions.json
+          git checkout -- xray_shell_versions.json
+          exit 1
+        fi
+    
     - name: Push changes
       uses: ad-m/github-push-action@master
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Refresh CDN cache
+      if: success() && steps.validate_json.outcome == 'success'
+      run: |
+        curl -X PURGE https://purge.jsdelivr.net/gh/hello-yunshu/Xray_bash_onekey_api@main/xray_shell_versions.json
