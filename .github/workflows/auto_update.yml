@@ -4,6 +4,12 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '0 */2 * * *'
+  push:
+    paths:
+      - '.github/workflows/auto_update.yml'
+      - 'update-version.sh'
+      - 'validate-json.sh'
+      - 'tested_versions.json'
 
 jobs:
   del_runs:
@@ -60,4 +66,4 @@ jobs:
     - name: Refresh CDN cache
       if: success() && steps.validate_json.outcome == 'success'
       run: |
-        curl -X PURGE https://purge.jsdelivr.net/gh/hello-yunshu/Xray_bash_onekey_api@main/xray_shell_versions.json
+        curl -f https://purge.jsdelivr.net/gh/hello-yunshu/Xray_bash_onekey_api@main/xray_shell_versions.json || echo "Failed to download the file"
