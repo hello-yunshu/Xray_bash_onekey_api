@@ -10,6 +10,7 @@ on:
       - 'update-version.sh'
       - 'validate-json.sh'
       - 'tested_versions.json'
+      - 'update-tested-versions.yml'
 
 jobs:
   del_runs:
