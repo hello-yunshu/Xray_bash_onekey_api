@@ -35,7 +35,10 @@ current_versions=$(cat ${online_version_file})
 
 # 初始化更新标志和 JSON 数据
 update_required=false
-new_json="{\"update_date\": \"$(date '+%Y-%m-%d %H:%M')\", \"shell_upgrade_details\": \"\"}"
+new_json=$(echo "{}")
+
+# 添加更新日期
+new_json=$(echo "$new_json" | jq --arg date "$(date '+%Y-%m-%d %H:%M')" '. * {"update_date": $date}')
 
 # 检查每个组件的版本
 for key in "${!tested_versions[@]}"; do
@@ -43,29 +46,27 @@ for key in "${!tested_versions[@]}"; do
     new_value=${online_versions[$key]}
     
     # 更新 JSON 数据
-    new_json="${new_json},\"${key}_tested_version\": \"${tested_versions[$key]}\",\"${key}_online_version\": \"${new_value}\""
+    new_json=$(echo "$new_json" | jq --arg key "$key" --arg value "$new_value" '. * {"\($key)_online_version": $value}')
+    new_json=$(echo "$new_json" | jq --arg key "$key" --arg value "${tested_versions[$key]}" '. * {"\($key)_tested_version": $value}')
     
     # 检查是否需要更新
     if [[ ${current_value} != ${new_value} ]]; then
         update_required=true
         if [[ $key == "shell" ]]; then
             shell_upgrade_details=$(curl -s https://api.github.com/repos/hello-yunshu/Xray_bash_onekey/commits | jq '.[] | select(.author.login == "hello-yunshu") | .commit.message' -r | head -n 1)
-            new_json="${new_json},\"shell_upgrade_details\": \"$shell_upgrade_details\""
+            new_json=$(echo "$new_json" | jq --arg details "$shell_upgrade_details" '. * {"shell_upgrade_details": $details}')
         fi
     else
         if [[ $key == "shell" ]]; then
             existing_upgrade_details=$(echo "$current_versions" | jq -r ".shell_upgrade_details")
-            new_json="${new_json},\"shell_upgrade_details\": \"$existing_upgrade_details\""
+            new_json=$(echo "$new_json" | jq --arg details "$existing_upgrade_details" '. * {"shell_upgrade_details": $details}')
         fi
     fi
 done
 
-# 移除多余的逗号
-new_json=$(echo "$new_json" | sed 's/,}/}/')
-
 # 如果需要更新，则执行更新操作
 if $update_required; then
-    echo "$new_json" | jq . >${online_version_file}
+    echo "$new_json" >${online_version_file}
     
     git config --global user.name "github-actions[bot]"
     git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
