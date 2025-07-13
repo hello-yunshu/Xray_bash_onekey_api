@@ -1,16 +1,13 @@
 #!/bin/bash
 
 online_version_file="./xray_shell_versions.json"
+tested_versions_file="./tested_versions.json"
 
-# 定义测试版本
-declare -A tested_versions=(
-    ["shell"]="2.5.9"
-    ["xray"]="25.6.8"
-    ["nginx"]="1.28.0"
-    ["openssl"]="3.5.1"
-    ["jemalloc"]="5.3.0"
-    ["nginx_build"]="2025.07.01"
-)
+# 读取 tested_versions 文件
+declare -A tested_versions
+while IFS='=' read -r key value; do
+    tested_versions["$key"]=$value
+done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' "$tested_versions_file")
 
 # 获取在线版本
 declare -A online_versions
