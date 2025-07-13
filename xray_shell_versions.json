@@ -1,4 +1,16 @@
 {
-  "update_date": "2025-07-13 16:05",
-  "shell_upgrade_details": ""
+  "update_date": "2025-07-13 16:08",
+  "shell_online_version": "2.6.0",
+  "shell_tested_version": "2.5.9",
+  "shell_upgrade_details": "Update install URLs and version check endpoints",
+  "nginx_build_online_version": "2025.07.01",
+  "nginx_build_tested_version": "2025.07.01",
+  "nginx_online_version": "1.28.0",
+  "nginx_tested_version": "1.28.0",
+  "xray_online_version": "25.6.8",
+  "xray_tested_version": "25.6.8",
+  "jemalloc_online_version": "5.3.0",
+  "jemalloc_tested_version": "5.3.0",
+  "openssl_online_version": "3.5.1",
+  "openssl_tested_version": "3.5.1"
 }
