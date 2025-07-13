@@ -1,0 +1,57 @@
+name: Update Tested Versions
+
+on:
+  workflow_dispatch:
+
+jobs:
+  update-versions:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@main
+
+      - name: Set up Node.js
+        uses: actions/setup-node@main
+        with:
+          node-version: '14'
+
+      - name: Install dependencies
+        run: npm install --global jq
+
+      - name: Read and write JSON files
+        id: json-process
+        run: |
+          # Read the online versions from xray_shell_versions.json
+          SHELL_ONLINE_VERSION=$(jq -r '.shell_online_version' xray_shell_versions.json)
+          XRAY_ONLINE_VERSION=$(jq -r '.xray_online_version' xray_shell_versions.json)
+          NGINX_ONLINE_VERSION=$(jq -r '.nginx_online_version' xray_shell_versions.json)
+          OPENSSL_ONLINE_VERSION=$(jq -r '.openssl_online_version' xray_shell_versions.json)
+          JEMALLOC_ONLINE_VERSION=$(jq -r '.jemalloc_online_version' xray_shell_versions.json)
+          NGINX_BUILD_ONLINE_VERSION=$(jq -r '.nginx_build_online_version' xray_shell_versions.json)
+
+          # Create a new tested_versions.json with the online versions
+          cat <<EOF > temp_tested_versions.json
+          {
+            "shell": "$SHELL_ONLINE_VERSION",
+            "xray": "$XRAY_ONLINE_VERSION",
+            "nginx": "$NGINX_ONLINE_VERSION",
+            "openssl": "$OPENSSL_ONLINE_VERSION",
+            "jemalloc": "$JEMALLOC_ONLINE_VERSION",
+            "nginx_build": "$NGINX_BUILD_ONLINE_VERSION"
+          }
+          EOF
+
+          # Output the new content of tested_versions.json for verification
+          cat temp_tested_versions.json
+
+          # Replace the original tested_versions.json with the updated one
+          mv temp_tested_versions.json tested_versions.json
+
+      - name: Commit changes
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add tested_versions.json
+          git commit -m "Update tested_versions.json with online_version from xray_shell_versions"
+          git push origin HEAD:${{ github.ref }}
