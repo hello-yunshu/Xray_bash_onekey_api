@@ -1,8 +1,8 @@
 {
-  "update_date": "2025-07-13 16:08",
-  "shell_online_version": "2.6.0",
-  "shell_tested_version": "2.5.9",
-  "shell_upgrade_details": "Update install URLs and version check endpoints",
+  "update_date": "2025-07-18 14:17",
+  "shell_online_version": "2.6.1",
+  "shell_tested_version": "2.6.0",
+  "shell_upgrade_details": "\\Add French language support and update docs\\\\n\\",
   "nginx_build_online_version": "2025.07.01",
   "nginx_build_tested_version": "2025.07.01",
   "nginx_online_version": "1.28.0",
