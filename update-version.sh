@@ -52,7 +52,7 @@ for key in "${!tested_versions[@]}"; do
         if [[ $key == "shell" ]]; then
             shell_upgrade_details=$(curl -s https://api.github.com/repos/hello-yunshu/Xray_bash_onekey/commits | jq '.[] | select(.author.login == "hello-yunshu") | .commit.message' -r | head -n 1)
             # 使用 jq 对 shell_upgrade_details 进行转义
-            shell_upgrade_details=$(echo "$shell_upgrade_details" | jq -Rsa @json | tr -d '"')
+            shell_upgrade_details=$(echo "$shell_upgrade_details" | tr -d '"')
             new_json=$(echo "$new_json" | jq --arg details "$shell_upgrade_details" '. * {"shell_upgrade_details": $details}')
         fi
     else
