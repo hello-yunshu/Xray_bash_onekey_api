@@ -46,7 +46,14 @@ jobs:
       run: cp xray_shell_versions.json xray_shell_versions_backup.json
     
     - name: Run script
-      run: bash update-version.sh
+      run: |
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" || "${{ github.event_name }}" == "push" ]]; then
+          echo "Forcing re-generation of xray_shell_versions.json"
+          bash update-version.sh --force
+        else
+          echo "Running regular update script"
+          bash update-version.sh
+        fi
         
     - name: Validate updated JSON
       id: validate_json
