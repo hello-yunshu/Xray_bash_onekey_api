@@ -3,6 +3,12 @@
 online_version_file="./xray_shell_versions.json"
 tested_versions_file="./tested_versions.json"
 
+# 检查是否需要强制重新生成
+force_regen=false
+if [[ "$1" == "--force" ]]; then
+  force_regen=true
+fi
+
 # 读取 tested_versions 文件
 declare -A tested_versions
 while IFS='=' read -r key value; do
@@ -47,7 +53,7 @@ for key in "${!tested_versions[@]}"; do
     new_json=$(echo "$new_json" | jq --arg key "$key" --arg value "${tested_versions[$key]}" '. * {"\($key)_tested_version": $value}')
     
     # 检查是否需要更新
-    if [[ ${current_value} != ${new_value} ]]; then
+    if [[ ${current_value} != ${new_value} || $force_regen == true ]]; then
         update_required=true
         if [[ $key == "shell" ]]; then
             shell_upgrade_details=$(curl -s https://api.github.com/repos/hello-yunshu/Xray_bash_onekey/commits | jq '.[] | select(.author.login == "hello-yunshu") | .commit.message' -r | head -n 1)
