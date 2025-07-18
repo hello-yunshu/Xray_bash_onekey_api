@@ -1,8 +1,8 @@
 {
-  "update_date": "2025-07-18 16:01",
+  "update_date": "2025-07-18 16:03",
   "shell_online_version": "2.6.1",
   "shell_tested_version": "2.6.0",
-  "shell_upgrade_details": "Update README instructions and links in EN/FR",
+  "shell_upgrade_details": "Add French language support and update docs",
   "nginx_build_online_version": "2025.07.01",
   "nginx_build_tested_version": "2025.07.01",
   "nginx_online_version": "1.28.0",
