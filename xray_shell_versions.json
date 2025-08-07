@@ -1,8 +1,8 @@
 {
-  "update_date": "2025-08-05 16:19",
-  "shell_online_version": "2.6.2",
+  "update_date": "2025-08-07 16:23",
+  "shell_online_version": "2.6.3",
   "shell_tested_version": "2.6.1",
-  "shell_upgrade_details": "Update server location instructions and improve install.sh logic",
+  "shell_upgrade_details": "Update logic for ws/grpc config and bump version to 2.6.3",
   "nginx_build_online_version": "2025.07.01",
   "nginx_build_tested_version": "2025.07.01",
   "nginx_online_version": "1.28.0",
