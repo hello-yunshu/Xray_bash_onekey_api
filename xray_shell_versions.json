@@ -1,8 +1,8 @@
 {
-  "update_date": "2025-08-31 14:12",
-  "shell_online_version": "2.6.3",
+  "update_date": "2025-09-01 07:12",
+  "shell_online_version": "2.6.4",
   "shell_tested_version": "2.6.3",
-  "shell_upgrade_details": "Update logic for ws/grpc config and bump version to 2.6.3",
+  "shell_upgrade_details": "Update Reality publicKey to password and fix key extraction",
   "nginx_build_online_version": "2025.08.29",
   "nginx_build_tested_version": "2025.07.01",
   "nginx_online_version": "1.28.0",
