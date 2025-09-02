@@ -1,8 +1,8 @@
 {
-  "update_date": "2025-09-01 08:20",
-  "shell_online_version": "2.6.5",
+  "update_date": "2025-09-02 08:22",
+  "shell_online_version": "2.7.0",
   "shell_tested_version": "2.6.3",
-  "shell_upgrade_details": "Improve null checks and update shell version",
+  "shell_upgrade_details": "Update version and fix realityServers file creation",
   "nginx_build_online_version": "2025.08.29",
   "nginx_build_tested_version": "2025.07.01",
   "nginx_online_version": "1.28.0",
