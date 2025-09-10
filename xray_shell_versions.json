@@ -1,8 +1,8 @@
 {
-  "update_date": "2025-09-10 01:11",
-  "shell_online_version": "2.7.1",
+  "update_date": "2025-09-10 06:23",
+  "shell_online_version": "2.7.2",
   "shell_tested_version": "2.6.3",
-  "shell_upgrade_details": "Refactor nginx uninstall logic and update version",
+  "shell_upgrade_details": "Unset LANG instead of defaulting to zh_CN.UTF-8",
   "nginx_build_online_version": "2025.08.29",
   "nginx_build_tested_version": "2025.07.01",
   "nginx_online_version": "1.28.0",
