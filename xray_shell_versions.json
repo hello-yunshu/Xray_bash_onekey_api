@@ -1,8 +1,8 @@
 {
-  "update_date": "2025-09-10 12:32",
-  "shell_online_version": "2.7.2",
+  "update_date": "2025-09-11 06:24",
+  "shell_online_version": "2.7.3",
   "shell_tested_version": "2.6.3",
-  "shell_upgrade_details": "Unset LANG instead of defaulting to zh_CN.UTF-8",
+  "shell_upgrade_details": "Update email and domain references to hey.run",
   "nginx_build_online_version": "2025.08.29",
   "nginx_build_tested_version": "2025.07.01",
   "nginx_online_version": "1.28.0",
