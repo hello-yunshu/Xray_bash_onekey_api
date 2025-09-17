@@ -1,8 +1,8 @@
 {
-  "update_date": "2025-09-16 14:16",
-  "shell_online_version": "2.7.3",
+  "update_date": "2025-09-17 18:22",
+  "shell_online_version": "2.7.4",
   "shell_tested_version": "2.6.3",
-  "shell_upgrade_details": "Update email and domain references to hey.run",
+  "shell_upgrade_details": "Improve error handling in nginx_install function",
   "nginx_build_online_version": "2025.09.16",
   "nginx_build_tested_version": "2025.07.01",
   "nginx_online_version": "1.28.0",
