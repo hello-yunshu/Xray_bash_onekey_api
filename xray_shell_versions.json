@@ -1,9 +1,9 @@
 {
-  "update_date": "2025-09-30 14:16",
+  "update_date": "2025-09-30 16:20",
   "shell_online_version": "2.7.4",
   "shell_tested_version": "2.6.3",
   "shell_upgrade_details": "Improve error handling in nginx_install function",
-  "nginx_build_online_version": "2025.09.16",
+  "nginx_build_online_version": "2025.09.30",
   "nginx_build_tested_version": "2025.07.01",
   "nginx_online_version": "1.28.0",
   "nginx_tested_version": "1.28.0",
