@@ -43,7 +43,12 @@ jobs:
       run: chmod +x update-version.sh validate-json.sh
     
     - name: Backup xray_shell_versions.json
-      run: cp xray_shell_versions.json xray_shell_versions_backup.json
+      run: |
+        if [ -f xray_shell_versions.json ]; then
+          cp xray_shell_versions.json xray_shell_versions_backup.json
+        else
+          echo "{}" > xray_shell_versions_backup.json
+        fi
     
     - name: Run script
       run: |
@@ -61,8 +66,10 @@ jobs:
         ./validate-json.sh
         if [ $? -ne 0 ]; then
           echo "Validation failed. Restoring backup..."
-          mv xray_shell_versions_backup.json xray_shell_versions.json
-          git checkout -- xray_shell_versions.json
+          if [ -f xray_shell_versions_backup.json ]; then
+            mv xray_shell_versions_backup.json xray_shell_versions.json
+            git checkout -- xray_shell_versions.json
+          fi
           exit 1
         fi
     
@@ -75,3 +82,9 @@ jobs:
       if: success() && steps.validate_json.outcome == 'success'
       run: |
         curl -f https://purge.jsdelivr.net/gh/hello-yunshu/Xray_bash_onekey_api@main/xray_shell_versions.json || echo "Failed to download the file"
+        
+    - name: Cleanup
+      if: always()
+      run: |
+        rm -f xray_shell_versions_backup.json
+        
