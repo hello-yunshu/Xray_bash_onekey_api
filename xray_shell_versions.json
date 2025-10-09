@@ -1,5 +1,5 @@
 {
-  "update_date": "2025-10-09 12:34",
+  "update_date": "2025-10-09 13:51",
   "shell_online_version": "2.7.4",
   "shell_tested_version": "2.6.3",
   "shell_upgrade_details": "Improve error handling in nginx_install function",
