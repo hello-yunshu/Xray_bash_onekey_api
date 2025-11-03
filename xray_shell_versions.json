@@ -1,8 +1,8 @@
 {
-  "update_date": "2025-10-15 12:35",
-  "shell_online_version": "2.7.4",
+  "update_date": "2025-11-03 14:17",
+  "shell_online_version": "2.7.5",
   "shell_tested_version": "2.6.3",
-  "shell_upgrade_details": "Improve error handling in nginx_install function",
+  "shell_upgrade_details": "Add Clash config generation for VLESS links",
   "nginx_build_online_version": "2025.10.01",
   "nginx_build_tested_version": "2025.07.01",
   "nginx_online_version": "1.28.0",
