@@ -69,8 +69,22 @@ for key in "${!tested_versions[@]}"; do
     fi
 done
 
-# 如果需要更新，则执行更新操作
+# 记录更新检查时间
+check_time=$(date '+%Y-%m-%d %H:%M:%S')
+
+# 收集更新信息
 if $update_required; then
+    # 记录需要更新的组件
+    updated_components=""
+    for key in "${!tested_versions[@]}"; do
+        current_value=$(echo "$current_versions" | jq -r ".${key}_online_version")
+        new_value=${online_versions[$key]}
+        if [[ ${current_value} != ${new_value} ]]; then
+            updated_components+="${key}: ${current_value} → ${new_value}\\n"
+        fi
+    done
+    
+    # 执行更新操作
     echo "$new_json" >${online_version_file}
     
     git config --global user.name "github-actions[bot]"
@@ -78,8 +92,10 @@ if $update_required; then
     git add ./xray_shell_versions.json
     git commit -m "Auto Update" -a
     
-    echo "::notice title=Auto Update::更新版本完成"
+    # 输出详细的更新信息到Annotations
+    echo -e "::notice title=Auto Update::[${check_time}] 更新完成\n\n更新的组件：\n${updated_components}"
 else
-    echo "::notice title=Auto Update::无需更新版本"
+    # 输出详细的无需更新信息到Annotations
+    echo -e "::notice title=Auto Update::[${check_time}] 无需更新版本\n\n所有组件版本已为最新状态"
     exit 0
 fi
