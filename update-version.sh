@@ -78,8 +78,8 @@ if $update_required; then
     git add ./xray_shell_versions.json
     git commit -m "Auto Update" -a
     
-    echo -e "更新版本完成"
+    echo "::notice title=Auto Update::更新版本完成"
 else
-    echo -e "无需更新版本"
-    exit 3
+    echo "::notice title=Auto Update::无需更新版本"
+    exit 0
 fi
