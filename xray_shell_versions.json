@@ -1,5 +1,5 @@
 {
-  "update_date": "2025-12-03 05:28",
+  "update_date": "2025-12-03 05:37",
   "shell_online_version": "2.7.5",
   "shell_tested_version": "2.7.5",
   "shell_upgrade_details": "Update DNS and outbound settings in VLESS configs",
