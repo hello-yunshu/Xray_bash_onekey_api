@@ -1,8 +1,8 @@
 {
-  "update_date": "2025-12-23 22:17",
-  "shell_online_version": "2.7.5",
+  "update_date": "2025-12-30 18:27",
+  "shell_online_version": "2.8.0",
   "shell_tested_version": "2.7.5",
-  "shell_upgrade_details": "Update DNS and outbound settings in VLESS configs",
+  "shell_upgrade_details": "Add XTLS-only mode and update config handling",
   "nginx_build_online_version": "2025.12.23",
   "nginx_build_tested_version": "2025.10.01",
   "nginx_online_version": "1.28.1",
