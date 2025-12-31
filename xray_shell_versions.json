@@ -1,8 +1,8 @@
 {
-  "update_date": "2025-12-31 04:36",
-  "shell_online_version": "2.8.1",
+  "update_date": "2025-12-31 06:29",
+  "shell_online_version": "2.8.2",
   "shell_tested_version": "2.7.5",
-  "shell_upgrade_details": "Update Chinese translations and version info",
+  "shell_upgrade_details": "Bump script versions in fail2ban_manager and file_manager",
   "nginx_build_online_version": "2025.12.23",
   "nginx_build_tested_version": "2025.10.01",
   "nginx_online_version": "1.28.1",
