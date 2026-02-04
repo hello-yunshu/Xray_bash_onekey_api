@@ -1,11 +1,11 @@
 {
-  "update_date": "2026-02-04 01:50",
+  "update_date": "2026-02-04 18:43",
   "shell_online_version": "2.8.5",
   "shell_tested_version": "2.8.3",
   "shell_upgrade_details": "Update shell version and improve menu script handling",
   "nginx_build_online_version": "2026.01.27",
   "nginx_build_tested_version": "2025.12.23",
-  "nginx_online_version": "1.28.1",
+  "nginx_online_version": "1.28.2",
   "nginx_tested_version": "1.28.1",
   "xray_online_version": "26.2.4",
   "xray_tested_version": "25.12.8",
