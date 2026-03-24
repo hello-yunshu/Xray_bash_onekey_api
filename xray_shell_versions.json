@@ -1,9 +1,9 @@
 {
-  "update_date": "2026-03-24 18:58",
+  "update_date": "2026-03-24 20:38",
   "shell_online_version": "2.8.8",
   "shell_tested_version": "2.8.3",
   "shell_upgrade_details": "Add iftop port traffic monitor; bump version",
-  "nginx_build_online_version": "2026.03.11",
+  "nginx_build_online_version": "2026.03.24",
   "nginx_build_tested_version": "2025.12.23",
   "nginx_online_version": "1.28.3",
   "nginx_tested_version": "1.28.1",
