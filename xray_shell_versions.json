@@ -1,8 +1,8 @@
 {
-  "update_date": "2026-04-07 16:54",
-  "shell_online_version": "2.8.8",
+  "update_date": "2026-04-12 07:09",
+  "shell_online_version": "2.8.9",
   "shell_tested_version": "2.8.3",
-  "shell_upgrade_details": "Add iftop port traffic monitor; bump version",
+  "shell_upgrade_details": "Bump shell_version and xray key parsing",
   "nginx_build_online_version": "2026.04.07",
   "nginx_build_tested_version": "2025.12.23",
   "nginx_online_version": "1.28.3",
