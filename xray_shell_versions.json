@@ -1,11 +1,11 @@
 {
-  "update_date": "2026-04-14 05:58",
+  "update_date": "2026-04-14 13:19",
   "shell_online_version": "2.8.9",
   "shell_tested_version": "2.8.3",
   "shell_upgrade_details": "Bump shell_version and xray key parsing",
   "nginx_build_online_version": "2026.04.14",
   "nginx_build_tested_version": "2025.12.23",
-  "nginx_online_version": "1.28.3",
+  "nginx_online_version": "1.30.0",
   "nginx_tested_version": "1.28.1",
   "xray_online_version": "26.3.27",
   "xray_tested_version": "25.12.8",
