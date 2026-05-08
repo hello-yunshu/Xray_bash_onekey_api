@@ -1,8 +1,8 @@
 {
-  "update_date": "2026-05-07 21:01",
-  "shell_online_version": "2.9.0",
+  "update_date": "2026-05-08 11:10",
+  "shell_online_version": "2.9.1",
   "shell_tested_version": "2.8.3",
-  "shell_upgrade_details": "fix: complete shell quoting and safe_rm improvements missed in prior refactor",
+  "shell_upgrade_details": "Improve error handling, rollback logic and Xray compatibility",
   "nginx_build_online_version": "2026.04.14",
   "nginx_build_tested_version": "2025.12.23",
   "nginx_online_version": "1.30.0",
