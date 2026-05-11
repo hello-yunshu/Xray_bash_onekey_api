@@ -1,8 +1,8 @@
 {
-  "update_date": "2026-05-11 21:13",
-  "shell_online_version": "2.9.2",
+  "update_date": "2026-05-11 22:51",
+  "shell_online_version": "2.10.0",
   "shell_tested_version": "2.8.3",
-  "shell_upgrade_details": "refactor(traffic_blocker): replace china_ip/china_domain with multi-country blocking",
+  "shell_upgrade_details": "refactor: unify MIN_MAIN_VERSION and extract ensure_sub_script",
   "nginx_build_online_version": "2026.04.14",
   "nginx_build_tested_version": "2025.12.23",
   "nginx_online_version": "1.30.0",
