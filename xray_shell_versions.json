@@ -1,8 +1,8 @@
 {
-  "update_date": "2026-05-22 19:40",
-  "shell_online_version": "2.12.9",
+  "update_date": "2026-05-22 21:06",
+  "shell_online_version": "2.12.10",
   "shell_tested_version": "2.8.3",
-  "shell_upgrade_details": "fix: _info_cache associative array loss and add_user/remove_user None mode",
+  "shell_upgrade_details": "Restructure project directory layout",
   "nginx_build_online_version": "2026.05.22.6519",
   "nginx_build_tested_version": "2025.12.23",
   "nginx_online_version": "1.30.2",
