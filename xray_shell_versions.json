@@ -1,8 +1,8 @@
 {
-  "update_date": "2026-05-23 20:46",
-  "shell_online_version": "2.13.2",
+  "update_date": "2026-05-24 20:51",
+  "shell_online_version": "2.13.3",
   "shell_tested_version": "2.8.3",
-  "shell_upgrade_details": "bump: i18n reuse split + version bumps (install.sh 2.13.2, file_manager 1.5.10, traffic_blocker 1.6.0, fail2ban 1.5.8)",
+  "shell_upgrade_details": "fix: 10 confirmed bugs across 6 files",
   "nginx_build_online_version": "2026.05.22.6519",
   "nginx_build_tested_version": "2025.12.23",
   "nginx_online_version": "1.30.2",
