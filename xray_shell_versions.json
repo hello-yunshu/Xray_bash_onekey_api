@@ -1,8 +1,8 @@
 {
-  "update_date": "2026-05-27 15:32",
-  "shell_online_version": "2.13.8",
+  "update_date": "2026-05-27 18:23",
+  "shell_online_version": "2.13.9",
   "shell_tested_version": "2.8.3",
-  "shell_upgrade_details": "fix: add grpc_set_header Host for xhttp location to pass correct :authority to Xray",
+  "shell_upgrade_details": "fix: port_exist_check called with empty port in ws-only mode",
   "nginx_build_online_version": "2026.05.22.6519",
   "nginx_build_tested_version": "2025.12.23",
   "nginx_online_version": "1.30.2",
