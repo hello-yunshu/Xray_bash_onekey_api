@@ -1,0 +1,245 @@
+name: Promote Known-Good Version
+
+# Task B: Single-component controlled promotion of tested_version.
+# One component per run. The online_version is NEVER auto-copied to tested_version.
+# A human must explicitly promote a specific component+version here.
+
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        description: 'Component to promote (shell | xray | nginx | openssl | jemalloc | nginx_build)'
+        required: true
+        type: choice
+        options:
+          - shell
+          - xray
+          - nginx
+          - openssl
+          - jemalloc
+          - nginx_build
+      version:
+        description: 'Version string to promote (must match upstream release format)'
+        required: true
+        type: string
+      note:
+        description: 'Optional reason or verification note'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@main
+
+      - name: Install jq
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq jq
+
+      - name: Validate inputs and promote single component
+        env:
+          COMPONENT: ${{ inputs.component }}
+          VERSION: ${{ inputs.version }}
+          NOTE: ${{ inputs.note }}
+        run: |
+          set -euo pipefail
+
+          # --- Input validation ---
+          if [[ -z "${COMPONENT}" || -z "${VERSION}" ]]; then
+            echo "::error::component and version are required"
+            exit 1
+          fi
+
+          # Allowlist of components (prevents injection and typos)
+          case "${COMPONENT}" in
+            shell|xray|nginx|openssl|jemalloc|nginx_build) ;;
+            *)
+              echo "::error::Unknown component: ${COMPONENT}"
+              exit 1
+              ;;
+          esac
+
+          # Version format validation per component
+          case "${COMPONENT}" in
+            shell|xray|nginx|openssl|jemalloc)
+              # Semver-like: digits and dots only, at least one dot
+              if ! printf '%s' "${VERSION}" | grep -qE '^[0-9]+\.[0-9]+(\.[0-9]+)*$'; then
+                echo "::error::Invalid version format for ${COMPONENT}: ${VERSION}"
+                exit 1
+              fi
+              ;;
+            nginx_build)
+              # Date-based build version: YYYY.MM.DD[.NNNN]
+              if ! printf '%s' "${VERSION}" | grep -qE '^[0-9]{4}\.[0-9]{2}\.[0-9]{2}(\.[0-9]+)?$'; then
+                echo "::error::Invalid version format for nginx_build: ${VERSION}"
+                exit 1
+              fi
+              ;;
+          esac
+
+          # Reject null/empty/html as version
+          if [[ "${VERSION}" == "null" || "${VERSION}" == "undefined" || -z "${VERSION}" ]]; then
+            echo "::error::Version is null/empty/undefined — refuse to promote"
+            exit 1
+          fi
+
+          echo "✅ Input validation passed: component=${COMPONENT}, version=${VERSION}"
+
+          # --- Load current files ---
+          if [[ ! -f tested_versions.json ]]; then
+            echo "::error::tested_versions.json not found"
+            exit 1
+          fi
+          if [[ ! -f xray_shell_versions.json ]]; then
+            echo "::error::xray_shell_versions.json not found"
+            exit 1
+          fi
+
+          OLD_TESTED=$(jq -r --arg c "${COMPONENT}" '.[$c]' tested_versions.json)
+          echo "Current tested_version for ${COMPONENT}: ${OLD_TESTED}"
+
+          # --- Verify upstream release exists (best-effort, not silently skipped) ---
+          case "${COMPONENT}" in
+            shell)
+              # Check if install.sh on main contains this version
+              INSTALL_SOURCE=$(curl -fsSL "https://raw.githubusercontent.com/hello-yunshu/Xray_bash_onekey/main/install.sh" 2>/dev/null || true)
+              if [[ -z "${INSTALL_SOURCE}" ]]; then
+                echo "::warning::Could not fetch install.sh from main to verify shell version"
+              else
+                SHELL_VER_IN_FILE=$(printf '%s\n' "${INSTALL_SOURCE}" | grep '^shell_version=' | head -1 | awk -F'=|"' '{print $3}')
+                if [[ "${SHELL_VER_IN_FILE}" != "${VERSION}" ]]; then
+                  echo "::error::Version ${VERSION} does not match install.sh shell_version=${SHELL_VER_IN_FILE}"
+                  echo "The shell tested_version must match a version that exists in the main branch install.sh"
+                  exit 1
+                fi
+                echo "✅ Verified: shell_version=${VERSION} exists in install.sh on main"
+              fi
+              ;;
+            xray)
+              TAG="v${VERSION}"
+              HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' "https://api.github.com/repos/XTLS/Xray-core/releases/tags/${TAG}")
+              if [[ "${HTTP_CODE}" != "200" ]]; then
+                echo "::error::Xray release tag ${TAG} not found (HTTP ${HTTP_CODE})"
+                exit 1
+              fi
+              echo "✅ Verified: Xray release ${TAG} exists upstream"
+              ;;
+            nginx)
+              HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' "https://api.github.com/repos/nginx/nginx/releases/tags/release-${VERSION}")
+              if [[ "${HTTP_CODE}" != "200" ]]; then
+                # nginx uses tags, not releases — try tags endpoint
+                HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' "https://api.github.com/repos/nginx/nginx/git/refs/tags/release-${VERSION}")
+                if [[ "${HTTP_CODE}" != "200" ]]; then
+                  echo "::error::nginx release tag release-${VERSION} not found (HTTP ${HTTP_CODE})"
+                  exit 1
+                fi
+              fi
+              echo "✅ Verified: nginx tag release-${VERSION} exists upstream"
+              ;;
+            openssl)
+              HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' "https://api.github.com/repos/openssl/openssl/releases/tags/openssl-${VERSION}")
+              if [[ "${HTTP_CODE}" != "200" ]]; then
+                echo "::error::openssl release tag openssl-${VERSION} not found (HTTP ${HTTP_CODE})"
+                exit 1
+              fi
+              echo "✅ Verified: openssl tag openssl-${VERSION} exists upstream"
+              ;;
+            jemalloc)
+              HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' "https://api.github.com/repos/jemalloc/jemalloc/releases/tags/${VERSION}")
+              if [[ "${HTTP_CODE}" != "200" ]]; then
+                echo "::error::jemalloc release tag ${VERSION} not found (HTTP ${HTTP_CODE})"
+                exit 1
+              fi
+              echo "✅ Verified: jemalloc release ${VERSION} exists upstream"
+              ;;
+            nginx_build)
+              HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' "https://api.github.com/repos/hello-yunshu/Xray_bash_onekey_Nginx/releases/tags/v${VERSION}")
+              if [[ "${HTTP_CODE}" != "200" ]]; then
+                echo "::error::nginx_build release v${VERSION} not found (HTTP ${HTTP_CODE})"
+                exit 1
+              fi
+              echo "✅ Verified: nginx_build release v${VERSION} exists upstream"
+              ;;
+          esac
+
+          # --- Update tested_versions.json (single component only) ---
+          UPDATED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+          jq --arg c "${COMPONENT}" --arg v "${VERSION}" \
+             '.[$c] = $v' tested_versions.json > tested_versions.json.tmp
+          if ! jq empty tested_versions.json.tmp >/dev/null 2>&1; then
+            echo "::error::Generated tested_versions.json is invalid JSON"
+            rm -f tested_versions.json.tmp
+            exit 1
+          fi
+          mv tested_versions.json.tmp tested_versions.json
+          echo "✅ Updated tested_versions.json: ${COMPONENT} = ${VERSION}"
+
+          # --- Update xray_shell_versions.json (tested_version field + metadata) ---
+          TESTED_FIELD="${COMPONENT}_tested_version"
+          UPDATED_AT_FIELD="${COMPONENT}_tested_at"
+          UPDATED_NOTE_FIELD="${COMPONENT}_tested_note"
+
+          if [[ -n "${NOTE}" ]]; then
+            jq --arg field "${TESTED_FIELD}" \
+               --arg v "${VERSION}" \
+               --arg at_field "${UPDATED_AT_FIELD}" \
+               --arg at_v "${UPDATED_AT}" \
+               --arg note_field "${UPDATED_NOTE_FIELD}" \
+               --arg note_v "${NOTE}" \
+               '.[$field] = $v | .[$at_field] = $at_v | .[$note_field] = $note_v' \
+               xray_shell_versions.json > xray_shell_versions.json.tmp
+          else
+            jq --arg field "${TESTED_FIELD}" \
+               --arg v "${VERSION}" \
+               --arg at_field "${UPDATED_AT_FIELD}" \
+               --arg at_v "${UPDATED_AT}" \
+               '.[$field] = $v | .[$at_field] = $at_v' \
+               xray_shell_versions.json > xray_shell_versions.json.tmp
+          fi
+
+          if ! jq empty xray_shell_versions.json.tmp >/dev/null 2>&1; then
+            echo "::error::Generated xray_shell_versions.json is invalid JSON"
+            rm -f xray_shell_versions.json.tmp
+            # Rollback tested_versions.json
+            git checkout -- tested_versions.json
+            exit 1
+          fi
+          mv xray_shell_versions.json.tmp xray_shell_versions.json
+          echo "✅ Updated xray_shell_versions.json: ${TESTED_FIELD} = ${VERSION}"
+
+          # --- Validate no other tested fields changed (diff must only show expected fields) ---
+          echo ""
+          echo "=== Diff summary ==="
+          git diff --stat
+
+          # --- Final jq validation ---
+          jq empty tested_versions.json
+          jq empty xray_shell_versions.json
+          echo "✅ Both JSON files pass jq empty validation"
+
+          # --- Save outputs for commit step ---
+          {
+            echo "OLD_TESTED=${OLD_TESTED}"
+            echo "NEW_TESTED=${VERSION}"
+            echo "COMPONENT=${COMPONENT}"
+          } >> "$GITHUB_ENV"
+
+      - name: Commit promoted version
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tested_versions.json xray_shell_versions.json
+          git commit -m "promote(${COMPONENT}): ${OLD_TESTED} → ${NEW_TESTED}
+
+          Single-component known-good promotion.
+  component: ${COMPONENT}
+  old: ${OLD_TESTED}
+  new: ${NEW_TESTED}
+  promoted_at: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          git push origin HEAD:main

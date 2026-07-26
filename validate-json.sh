@@ -51,16 +51,35 @@ fi
 if [[ ${#tested_versions[@]} -gt 0 ]]; then
     for key in "${!tested_versions[@]}"; do
         current_value=$(echo "$current_versions" | jq -r ".${key}_online_version")
-        
+
         # 检查值是否为null、空或"null"字符串
         if [[ -z ${current_value} ]] || [[ ${current_value} == "null" ]]; then
             echo "Validation failed for ${key}: ${key}_online_version is missing, empty, or null"
             exit 1
         fi
-        
+
         # 检查值是否为有效的字符串
         if [[ ${current_value} == "null" ]]; then
             echo "Validation failed for ${key}: ${key}_online_version is null"
+            exit 1
+        fi
+    done
+
+    # Task B: Also validate tested_version fields exist and are not null/empty.
+    # tested_version is the known-good fallback baseline — it must never be
+    # null, empty, or "undefined". It may legitimately differ from online_version.
+    for key in "${!tested_versions[@]}"; do
+        tested_value=$(echo "$current_versions" | jq -r ".${key}_tested_version" 2>/dev/null)
+
+        if [[ -z ${tested_value} ]] || [[ ${tested_value} == "null" ]]; then
+            echo "Validation failed for ${key}: ${key}_tested_version is missing, empty, or null"
+            echo "  tested_version is the known-good fallback and must be a valid version string."
+            echo "  Use the 'Promote Known-Good Version' workflow to set it."
+            exit 1
+        fi
+
+        if [[ ${tested_value} == "undefined" ]]; then
+            echo "Validation failed for ${key}: ${key}_tested_version is 'undefined'"
             exit 1
         fi
     done
