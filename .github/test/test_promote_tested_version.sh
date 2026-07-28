@@ -279,6 +279,62 @@ make_commits_json() {
   printf ']'
 }
 
+# Compute SHA256 of a string (same method as the script under test).
+# Uses shasum on macOS, falls back to sha256sum on Linux.
+compute_sha256_str() {
+  local content="$1"
+  if command -v shasum >/dev/null 2>&1; then
+    printf '%s' "$content" | shasum -a 256 | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    printf '%s' "$content" | sha256sum | awk '{print $1}'
+  else
+    return 1
+  fi
+}
+
+# Generate SHA256SUMS content.
+# Args: x86_sha arm_sha manifest_sha
+make_sha256sums() {
+  printf '%s  xray-nginx-custom-x86.tar.gz\n' "$1"
+  printf '%s  xray-nginx-custom-arm.tar.gz\n' "$2"
+  printf '%s  release-manifest.json\n' "$3"
+}
+
+# nginx_build release JSON WITHOUT SHA256SUMS asset
+make_nginx_build_release_no_sha256sums() {
+  local version="$1"
+  printf '{"tag_name": "v%s", "assets": [
+    {"name": "release-manifest.json", "browser_download_url": "https://example.com/manifest_%s.json"},
+    {"name": "xray-nginx-custom-x86.tar.gz", "browser_download_url": "https://example.com/x86.tar.gz"},
+    {"name": "xray-nginx-custom-arm.tar.gz", "browser_download_url": "https://example.com/arm.tar.gz"}
+  ]}' "$version" "$version"
+}
+
+# Manifest JSON with filename that does NOT match canonical contract.
+make_manifest_filename_mismatch() {
+  local version="$1"
+  printf '{
+    "schema_version": 1,
+    "tag": "v%s",
+    "versions": {"nginx_build": "%s", "nginx": "1.28.1"},
+    "assets": [
+      {"arch": "x86", "filename": "xray-nginx-custom-x86-MISMATCH.tar.gz", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size_bytes": 12345},
+      {"arch": "arm", "filename": "xray-nginx-custom-arm.tar.gz", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "size_bytes": 12346}
+    ]
+  }' "$version" "$version"
+}
+
+# Release JSON listing the mismatched x86 filename so existing asset checks pass.
+make_nginx_build_release_filename_mismatch() {
+  local version="$1"
+  printf '{"tag_name": "v%s", "assets": [
+    {"name": "release-manifest.json", "browser_download_url": "https://example.com/manifest_%s.json"},
+    {"name": "SHA256SUMS", "browser_download_url": "https://example.com/SHA256SUMS"},
+    {"name": "xray-nginx-custom-x86-MISMATCH.tar.gz", "browser_download_url": "https://example.com/x86.tar.gz"},
+    {"name": "xray-nginx-custom-arm.tar.gz", "browser_download_url": "https://example.com/arm.tar.gz"}
+  ]}' "$version" "$version"
+}
+
 # ============================================================================
 # Test helper: set up temp dir with fixture JSON files
 # ============================================================================
@@ -493,6 +549,286 @@ mock_http_nginx_build_valid() {
     *"/manifest_2025.12.23.json"*)
       FETCH_HTTP_CODE="200"
       make_manifest_valid "2025.12.23"
+      return 0
+      ;;
+    *"/SHA256SUMS"*)
+      FETCH_HTTP_CODE="200"
+      local manifest_content manifest_sha
+      manifest_content=$(make_manifest_valid "2025.12.23")
+      manifest_sha=$(compute_sha256_str "$manifest_content")
+      make_sha256sums \
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+        "$manifest_sha"
+      return 0
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+
+# Mock: nginx_build release WITHOUT SHA256SUMS asset in release JSON
+mock_http_nginx_build_no_sha256sums_asset() {
+  local url="$1"
+  case "$url" in
+    *"/releases/tags/v2025.12.23"*)
+      FETCH_HTTP_CODE="200"
+      make_nginx_build_release_no_sha256sums "2025.12.23"
+      return 0
+      ;;
+    *"/manifest_2025.12.23.json"*)
+      FETCH_HTTP_CODE="200"
+      make_manifest_valid "2025.12.23"
+      return 0
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+
+# Mock: SHA256SUMS download fails (network failure)
+mock_http_nginx_build_sha256sums_network_fail() {
+  local url="$1"
+  case "$url" in
+    *"/releases/tags/v2025.12.23"*)
+      FETCH_HTTP_CODE="200"
+      make_nginx_build_release_json "2025.12.23"
+      return 0
+      ;;
+    *"/manifest_2025.12.23.json"*)
+      FETCH_HTTP_CODE="200"
+      make_manifest_valid "2025.12.23"
+      return 0
+      ;;
+    *"/SHA256SUMS"*)
+      FETCH_HTTP_CODE="000"
+      return 1
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+
+# Mock: SHA256SUMS returns HTML instead of checksum content
+mock_http_nginx_build_sha256sums_html() {
+  local url="$1"
+  case "$url" in
+    *"/releases/tags/v2025.12.23"*)
+      FETCH_HTTP_CODE="200"
+      make_nginx_build_release_json "2025.12.23"
+      return 0
+      ;;
+    *"/manifest_2025.12.23.json"*)
+      FETCH_HTTP_CODE="200"
+      make_manifest_valid "2025.12.23"
+      return 0
+      ;;
+    *"/SHA256SUMS"*)
+      FETCH_HTTP_CODE="200"
+      printf '%s' "$FIXTURE_HTML"
+      return 0
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+
+# Mock: SHA256SUMS x86 SHA does not match manifest
+mock_http_nginx_build_sha256sums_x86_mismatch() {
+  local url="$1"
+  case "$url" in
+    *"/releases/tags/v2025.12.23"*)
+      FETCH_HTTP_CODE="200"
+      make_nginx_build_release_json "2025.12.23"
+      return 0
+      ;;
+    *"/manifest_2025.12.23.json"*)
+      FETCH_HTTP_CODE="200"
+      make_manifest_valid "2025.12.23"
+      return 0
+      ;;
+    *"/SHA256SUMS"*)
+      FETCH_HTTP_CODE="200"
+      local manifest_content manifest_sha
+      manifest_content=$(make_manifest_valid "2025.12.23")
+      manifest_sha=$(compute_sha256_str "$manifest_content")
+      # x86 SHA intentionally wrong (cccc... instead of aaaa...)
+      make_sha256sums \
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" \
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+        "$manifest_sha"
+      return 0
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+
+# Mock: SHA256SUMS arm SHA does not match manifest
+mock_http_nginx_build_sha256sums_arm_mismatch() {
+  local url="$1"
+  case "$url" in
+    *"/releases/tags/v2025.12.23"*)
+      FETCH_HTTP_CODE="200"
+      make_nginx_build_release_json "2025.12.23"
+      return 0
+      ;;
+    *"/manifest_2025.12.23.json"*)
+      FETCH_HTTP_CODE="200"
+      make_manifest_valid "2025.12.23"
+      return 0
+      ;;
+    *"/SHA256SUMS"*)
+      FETCH_HTTP_CODE="200"
+      local manifest_content manifest_sha
+      manifest_content=$(make_manifest_valid "2025.12.23")
+      manifest_sha=$(compute_sha256_str "$manifest_content")
+      # arm SHA intentionally wrong (cccc... instead of bbbb...)
+      make_sha256sums \
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" \
+        "$manifest_sha"
+      return 0
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+
+# Mock: SHA256SUMS has a duplicate entry for x86 tarball
+mock_http_nginx_build_sha256sums_duplicate() {
+  local url="$1"
+  case "$url" in
+    *"/releases/tags/v2025.12.23"*)
+      FETCH_HTTP_CODE="200"
+      make_nginx_build_release_json "2025.12.23"
+      return 0
+      ;;
+    *"/manifest_2025.12.23.json"*)
+      FETCH_HTTP_CODE="200"
+      make_manifest_valid "2025.12.23"
+      return 0
+      ;;
+    *"/SHA256SUMS"*)
+      FETCH_HTTP_CODE="200"
+      local manifest_content manifest_sha
+      manifest_content=$(make_manifest_valid "2025.12.23")
+      manifest_sha=$(compute_sha256_str "$manifest_content")
+      # Duplicate x86 entry
+      printf '%s  xray-nginx-custom-x86.tar.gz\n' \
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      printf '%s  xray-nginx-custom-x86.tar.gz\n' \
+        "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      printf '%s  xray-nginx-custom-arm.tar.gz\n' \
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      printf '%s  release-manifest.json\n' "$manifest_sha"
+      return 0
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+
+# Mock: SHA256SUMS missing the x86 architecture entry
+mock_http_nginx_build_sha256sums_missing_x86() {
+  local url="$1"
+  case "$url" in
+    *"/releases/tags/v2025.12.23"*)
+      FETCH_HTTP_CODE="200"
+      make_nginx_build_release_json "2025.12.23"
+      return 0
+      ;;
+    *"/manifest_2025.12.23.json"*)
+      FETCH_HTTP_CODE="200"
+      make_manifest_valid "2025.12.23"
+      return 0
+      ;;
+    *"/SHA256SUMS"*)
+      FETCH_HTTP_CODE="200"
+      local manifest_content manifest_sha
+      manifest_content=$(make_manifest_valid "2025.12.23")
+      manifest_sha=$(compute_sha256_str "$manifest_content")
+      # x86 entry intentionally omitted
+      printf '%s  xray-nginx-custom-arm.tar.gz\n' \
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      printf '%s  release-manifest.json\n' "$manifest_sha"
+      return 0
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+
+# Mock: manifest x86 filename does not match canonical SHA256SUMS filename
+mock_http_nginx_build_sha256sums_filename_mismatch() {
+  local url="$1"
+  case "$url" in
+    *"/releases/tags/v2025.12.23"*)
+      FETCH_HTTP_CODE="200"
+      make_nginx_build_release_filename_mismatch "2025.12.23"
+      return 0
+      ;;
+    *"/manifest_2025.12.23.json"*)
+      FETCH_HTTP_CODE="200"
+      make_manifest_filename_mismatch "2025.12.23"
+      return 0
+      ;;
+    *"/SHA256SUMS"*)
+      FETCH_HTTP_CODE="200"
+      local manifest_content manifest_sha
+      # SHA256SUMS lists the canonical filename, manifest lists MISMATCH filename
+      manifest_content=$(make_manifest_filename_mismatch "2025.12.23")
+      manifest_sha=$(compute_sha256_str "$manifest_content")
+      make_sha256sums \
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+        "$manifest_sha"
+      return 0
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+
+# Mock: SHA256SUMS release-manifest.json SHA does not match actual manifest content
+mock_http_nginx_build_sha256sums_manifest_sha_wrong() {
+  local url="$1"
+  case "$url" in
+    *"/releases/tags/v2025.12.23"*)
+      FETCH_HTTP_CODE="200"
+      make_nginx_build_release_json "2025.12.23"
+      return 0
+      ;;
+    *"/manifest_2025.12.23.json"*)
+      FETCH_HTTP_CODE="200"
+      make_manifest_valid "2025.12.23"
+      return 0
+      ;;
+    *"/SHA256SUMS"*)
+      FETCH_HTTP_CODE="200"
+      # manifest SHA intentionally wrong (cccc... instead of real hash)
+      make_sha256sums \
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
       return 0
       ;;
     *)
@@ -805,6 +1141,105 @@ EXIT_CODE=$?
 assert_promoted "T14: nginx_build valid manifest promotes" "$EXIT_CODE"
 NGINX_BUILD_TESTED=$(jq -r '.nginx_build' "$TMPDIR_TEST/tested_versions.json")
 assert_eq "T14: nginx_build tested updated" "2025.12.23" "$NGINX_BUILD_TESTED"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+# ============================================================================
+# Tests: SHA256SUMS consistency verification (P1-A)
+# ============================================================================
+
+echo ""
+echo "=============================================="
+echo "  Testing SHA256SUMS consistency (P1-A)"
+echo "=============================================="
+echo ""
+
+# T14a: nginx_build with valid SHA256SUMS (matches manifest) → promotes
+TMPDIR_TEST=$(setup_temp_repo)
+http_get() { mock_http_nginx_build_valid "$@"; }
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_promoted "T14a: valid SHA256SUMS promotes" "$EXIT_CODE"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+# T14b: SHA256SUMS asset missing from release JSON → reject
+TMPDIR_TEST=$(setup_temp_repo)
+http_get() { mock_http_nginx_build_no_sha256sums_asset "$@"; }
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_rejected "T14b: SHA256SUMS asset missing rejects" "$EXIT_CODE"
+assert_contains "T14b: error mentions SHA256SUMS" "SHA256SUMS" "$OUTPUT"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+# T14c: SHA256SUMS download network failure → reject
+TMPDIR_TEST=$(setup_temp_repo)
+http_get() { mock_http_nginx_build_sha256sums_network_fail "$@"; }
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_rejected "T14c: SHA256SUMS network failure rejects" "$EXIT_CODE"
+assert_contains "T14c: error mentions SHA256SUMS download" "SHA256SUMS" "$OUTPUT"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+# T14d: SHA256SUMS returns HTML → reject
+TMPDIR_TEST=$(setup_temp_repo)
+http_get() { mock_http_nginx_build_sha256sums_html "$@"; }
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_rejected "T14d: SHA256SUMS HTML rejects" "$EXIT_CODE"
+assert_contains "T14d: error mentions HTML" "HTML" "$OUTPUT"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+# T14e: SHA256SUMS x86 SHA mismatch → reject
+TMPDIR_TEST=$(setup_temp_repo)
+http_get() { mock_http_nginx_build_sha256sums_x86_mismatch "$@"; }
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_rejected "T14e: SHA256SUMS x86 SHA mismatch rejects" "$EXIT_CODE"
+assert_contains "T14e: error mentions x86 SHA mismatch" "x86" "$OUTPUT"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+# T14f: SHA256SUMS arm SHA mismatch → reject
+TMPDIR_TEST=$(setup_temp_repo)
+http_get() { mock_http_nginx_build_sha256sums_arm_mismatch "$@"; }
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_rejected "T14f: SHA256SUMS arm SHA mismatch rejects" "$EXIT_CODE"
+assert_contains "T14f: error mentions arm SHA mismatch" "arm" "$OUTPUT"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+# T14g: SHA256SUMS duplicate entry → reject
+TMPDIR_TEST=$(setup_temp_repo)
+http_get() { mock_http_nginx_build_sha256sums_duplicate "$@"; }
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_rejected "T14g: SHA256SUMS duplicate entry rejects" "$EXIT_CODE"
+assert_contains "T14g: error mentions entries" "entries" "$OUTPUT"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+# T14h: SHA256SUMS missing x86 architecture entry → reject
+TMPDIR_TEST=$(setup_temp_repo)
+http_get() { mock_http_nginx_build_sha256sums_missing_x86 "$@"; }
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_rejected "T14h: SHA256SUMS missing x86 entry rejects" "$EXIT_CODE"
+assert_contains "T14h: error mentions missing entry" "missing" "$OUTPUT"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+# T14i: manifest filename does not match SHA256SUMS canonical filename → reject
+TMPDIR_TEST=$(setup_temp_repo)
+http_get() { mock_http_nginx_build_sha256sums_filename_mismatch "$@"; }
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_rejected "T14i: filename mismatch with manifest rejects" "$EXIT_CODE"
+assert_contains "T14i: error mentions filename" "filename" "$OUTPUT"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+# T14j: SHA256SUMS release-manifest.json SHA record wrong → reject
+TMPDIR_TEST=$(setup_temp_repo)
+http_get() { mock_http_nginx_build_sha256sums_manifest_sha_wrong "$@"; }
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_rejected "T14j: manifest SHA record wrong rejects" "$EXIT_CODE"
+assert_contains "T14j: error mentions release-manifest.json SHA" "release-manifest.json" "$OUTPUT"
 cleanup_temp_repo "$TMPDIR_TEST"
 
 # ============================================================================
