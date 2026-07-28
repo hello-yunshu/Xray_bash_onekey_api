@@ -1,114 +1,65 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+set -u
 
 tested_versions_file="./tested_versions.json"
 online_version_file="./xray_shell_versions.json"
+components="shell xray nginx openssl jemalloc nginx_build"
 
-# 检查文件是否存在
-if [[ ! -f "$online_version_file" ]]; then
-    echo "Error: $online_version_file does not exist"
+fail() {
+    printf 'Error: %s\n' "$*" >&2
     exit 1
+}
+
+command -v jq >/dev/null 2>&1 || fail "jq is required"
+[[ -f "${tested_versions_file}" ]] || fail "${tested_versions_file} does not exist"
+[[ -f "${online_version_file}" ]] || fail "${online_version_file} does not exist"
+
+jq empty "${tested_versions_file}" >/dev/null 2>&1 ||
+    fail "${tested_versions_file} contains invalid JSON"
+jq empty "${online_version_file}" >/dev/null 2>&1 ||
+    fail "${online_version_file} contains invalid JSON"
+
+[[ "$(jq -r 'type' "${tested_versions_file}")" == "object" ]] ||
+    fail "${tested_versions_file} must contain a JSON object"
+[[ "$(jq -r 'type' "${online_version_file}")" == "object" ]] ||
+    fail "${online_version_file} must contain a JSON object"
+
+if jq -e '.. | select(. == null or . == "undefined")' \
+    "${tested_versions_file}" "${online_version_file}" >/dev/null 2>&1; then
+    fail "version JSON contains null or undefined values"
 fi
 
-# 读取 tested_versions 文件
-declare -A tested_versions
-if [[ -f "$tested_versions_file" ]]; then
-    while IFS='=' read -r key value; do
-        if [[ -n "$key" && -n "$value" ]]; then
-            tested_versions["$key"]=$value
-        fi
-    done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' "$tested_versions_file" 2>/dev/null)
-else
-    echo "Warning: $tested_versions_file does not exist, proceeding with basic validation"
-fi
+for component in ${components}; do
+    jq -e --arg c "${component}" '.[$c] | type == "string"' "${tested_versions_file}" >/dev/null ||
+        fail "${tested_versions_file}: ${component} must be a string"
+    jq -e --arg online "${component}_online_version" --arg tested "${component}_tested_version" \
+        '(.[$online] | type == "string") and (.[$tested] | type == "string")' \
+        "${online_version_file}" >/dev/null ||
+        fail "${online_version_file}: ${component} online/tested fields must be strings"
 
-# 读取当前版本文件内容
-current_versions=$(cat "$online_version_file")
+    short_value=$(jq -r --arg c "${component}" '.[$c] // empty' "${tested_versions_file}")
+    online_value=$(jq -r --arg f "${component}_online_version" '.[$f] // empty' "${online_version_file}")
+    tested_value=$(jq -r --arg f "${component}_tested_version" '.[$f] // empty' "${online_version_file}")
 
-# 验证JSON格式是否有效
-if ! echo "$current_versions" | jq empty 2>/dev/null; then
-    echo "Error: $online_version_file contains invalid JSON"
-    exit 1
-fi
+    [[ -n "${short_value}" ]] ||
+        fail "${tested_versions_file}: ${component} is missing or empty"
+    [[ -n "${online_value}" ]] ||
+        fail "${online_version_file}: ${component}_online_version is missing or empty"
+    [[ -n "${tested_value}" ]] ||
+        fail "${online_version_file}: ${component}_tested_version is missing or empty"
+    [[ "${short_value}" == "${tested_value}" ]] ||
+        fail "${component} tested version differs between the two JSON files"
 
-# 检查整个JSON是否为空
-json_size=$(echo "$current_versions" | jq 'if type == "object" then length elif type == "array" then length else 0 end')
-if [[ $json_size -eq 0 ]]; then
-    echo "Error: $online_version_file is empty or contains only an empty object/array"
-    exit 1
-fi
-
-# 检查是否存在null值
-null_count=$(echo "$current_versions" | jq 'walk(if type == "object" or type == "array" then . else . end) | .. | select(. == null) | length')
-if [[ $null_count -gt 0 ]]; then
-    echo "Error: $online_version_file contains $null_count null values"
-    # 输出包含null值的路径以便调试
-    echo "Null value paths:"
-    echo "$current_versions" | jq -r 'paths(select(. == null)) | join(".")' 2>/dev/null || echo "Could not identify null paths"
-    exit 1
-fi
-
-# 检查每个组件的版本（如果tested_versions文件存在）
-if [[ ${#tested_versions[@]} -gt 0 ]]; then
-    for key in "${!tested_versions[@]}"; do
-        current_value=$(echo "$current_versions" | jq -r ".${key}_online_version")
-
-        # 检查值是否为null、空或"null"字符串
-        if [[ -z ${current_value} ]] || [[ ${current_value} == "null" ]]; then
-            echo "Validation failed for ${key}: ${key}_online_version is missing, empty, or null"
-            exit 1
-        fi
-
-        # 检查值是否为有效的字符串
-        if [[ ${current_value} == "null" ]]; then
-            echo "Validation failed for ${key}: ${key}_online_version is null"
-            exit 1
+    for version_value in "${short_value}" "${online_value}" "${tested_value}"; do
+        if ! printf '%s' "${version_value}" | grep -qE '^[0-9]+(\.[0-9]+)+$'; then
+            fail "${component} contains an invalid version string: ${version_value}"
         fi
     done
+done
 
-    # Task B: Also validate tested_version fields exist and are not null/empty.
-    # tested_version is the known-good fallback baseline — it must never be
-    # null, empty, or "undefined". It may legitimately differ from online_version.
-    for key in "${!tested_versions[@]}"; do
-        tested_value=$(echo "$current_versions" | jq -r ".${key}_tested_version" 2>/dev/null)
+shell_upgrade_details=$(jq -r '.shell_upgrade_details // empty' "${online_version_file}")
+[[ -n "${shell_upgrade_details}" ]] ||
+    fail "shell_upgrade_details is missing or empty"
 
-        if [[ -z ${tested_value} ]] || [[ ${tested_value} == "null" ]]; then
-            echo "Validation failed for ${key}: ${key}_tested_version is missing, empty, or null"
-            echo "  tested_version is the known-good fallback and must be a valid version string."
-            echo "  Use the 'Promote Known-Good Version' workflow to set it."
-            exit 1
-        fi
-
-        if [[ ${tested_value} == "undefined" ]]; then
-            echo "Validation failed for ${key}: ${key}_tested_version is 'undefined'"
-            exit 1
-        fi
-    done
-fi
-
-# 检查 shell_upgrade_details 是否存在且有值
-shell_upgrade_details=$(echo "$current_versions" | jq -r ".shell_upgrade_details")
-if [[ -z ${shell_upgrade_details} ]] || [[ ${shell_upgrade_details} == "null" ]]; then
-    echo "Validation failed: shell_upgrade_details is missing, empty, or null"
-    exit 1
-fi
-
-# 额外检查：确保shell_upgrade_details本身不包含null值
-shell_null_count=$(echo "$shell_upgrade_details" | jq 'if type == "object" or type == "array" then walk(if type == "object" or type == "array" then . else . end) | .. | select(. == null) | length else 0 end' 2>/dev/null)
-if [[ $shell_null_count -gt 0 ]]; then
-    echo "Validation failed: shell_upgrade_details contains $shell_null_count null values"
-    exit 1
-fi
-
-# 检查是否有任何值为"undefined"字符串
-undefined_count=$(echo "$current_versions" | jq 'walk(if type == "string" and . == "undefined" then empty else . end) | if type == "string" and . == "undefined" then 1 else 0 end' 2>/dev/null || echo 0)
-if [[ $undefined_count -gt 0 ]]; then
-    # 更精确地检查是否有"undefined"字符串值
-    undefined_check=$(echo "$current_versions" | jq 'paths(select(type == "string" and . == "undefined")) | length' 2>/dev/null || echo 0)
-    if [[ $undefined_check -gt 0 ]]; then
-        echo "Validation failed: $online_version_file contains \"undefined\" values"
-        exit 1
-    fi
-fi
-
-echo "JSON validation successful."
-exit 0
+printf '%s\n' "JSON validation successful."
