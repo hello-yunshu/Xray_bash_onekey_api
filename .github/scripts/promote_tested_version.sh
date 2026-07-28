@@ -358,7 +358,104 @@ verify_nginx_build_release() {
     return 1
   fi
 
-  echo "OK: nginx_build release $tag verified (manifest, assets, sha256, version match)" >&2
+  # 7. Download SHA256SUMS content and verify consistency (fail-closed).
+  #    The resource name was checked in step 2; here we actually fetch the
+  #    content and cross-check every digest against the manifest.
+  local sha256sums_url
+  sha256sums_url=$(printf '%s' "$release_json" | "$JQ_BIN" -r \
+    '.assets[]? | select(.name == "SHA256SUMS") | .browser_download_url // empty' 2>/dev/null)
+  if [ -z "$sha256sums_url" ] || [ "$sha256sums_url" = "null" ]; then
+    echo "ERROR: SHA256SUMS asset URL not found in release $tag" >&2
+    return 1
+  fi
+
+  local SHA256SUMS_CONTENT
+  SHA256SUMS_CONTENT=$(http_get "$sha256sums_url") || {
+    echo "ERROR: failed to download SHA256SUMS (HTTP $FETCH_HTTP_CODE)" >&2
+    return 1
+  }
+
+  # 8. Reject HTML, empty, or truncated SHA256SUMS content.
+  if [ -z "$SHA256SUMS_CONTENT" ]; then
+    echo "ERROR: SHA256SUMS content is empty" >&2
+    return 1
+  fi
+  if printf '%s' "$SHA256SUMS_CONTENT" | grep -qi '^<html\|^<!DOCTYPE'; then
+    echo "ERROR: SHA256SUMS response is HTML, not checksum file" >&2
+    return 1
+  fi
+
+  # 9. Verify each required file has exactly one entry with valid SHA format.
+  #    Format: <sha256>  <filename>  (whitespace-separated)
+  local required_files="xray-nginx-custom-x86.tar.gz xray-nginx-custom-arm.tar.gz release-manifest.json"
+  local req_file
+  for req_file in $required_files; do
+    local sum_count sum_entry_sha
+    sum_count=$(printf '%s\n' "$SHA256SUMS_CONTENT" | \
+      awk -v f="$req_file" '$NF == f {c++} END {print c+0}')
+    if [ "$sum_count" -eq 0 ]; then
+      echo "ERROR: SHA256SUMS missing entry for $req_file" >&2
+      return 1
+    fi
+    if [ "$sum_count" -gt 1 ]; then
+      echo "ERROR: SHA256SUMS has $sum_count entries for $req_file (expected exactly 1)" >&2
+      return 1
+    fi
+    sum_entry_sha=$(printf '%s\n' "$SHA256SUMS_CONTENT" | \
+      awk -v f="$req_file" '$NF == f {print $1; exit}')
+    if ! printf '%s' "$sum_entry_sha" | grep -qE '^[0-9a-fA-F]{64}$'; then
+      echo "ERROR: SHA256SUMS entry for $req_file has invalid sha256 format: $sum_entry_sha" >&2
+      return 1
+    fi
+  done
+
+  # 10. Verify manifest x86/arm filename and SHA match SHA256SUMS exactly.
+  local arch manifest_filename manifest_sha sum_sha canonical
+  for arch in x86 arm; do
+    manifest_filename=$(printf '%s' "$manifest_json" | "$JQ_BIN" -r \
+      --arg arch "$arch" '.assets[]? | select(.arch == $arch) | .filename // empty' 2>/dev/null)
+    manifest_sha=$(printf '%s' "$manifest_json" | "$JQ_BIN" -r \
+      --arg arch "$arch" '.assets[]? | select(.arch == $arch) | .sha256 // empty' 2>/dev/null)
+
+    case "$arch" in
+      x86) canonical="xray-nginx-custom-x86.tar.gz" ;;
+      arm) canonical="xray-nginx-custom-arm.tar.gz" ;;
+    esac
+    if [ "$manifest_filename" != "$canonical" ]; then
+      echo "ERROR: manifest $arch filename ($manifest_filename) does not match canonical ($canonical)" >&2
+      return 1
+    fi
+
+    sum_sha=$(printf '%s\n' "$SHA256SUMS_CONTENT" | \
+      awk -v f="$manifest_filename" '$NF == f {print $1; exit}')
+    if [ -z "$sum_sha" ]; then
+      echo "ERROR: SHA256SUMS missing entry for $arch ($manifest_filename)" >&2
+      return 1
+    fi
+    if [ "$(printf '%s' "$manifest_sha" | tr 'A-F' 'a-f')" != "$(printf '%s' "$sum_sha" | tr 'A-F' 'a-f')" ]; then
+      echo "ERROR: manifest $arch SHA ($manifest_sha) does not match SHA256SUMS ($sum_sha)" >&2
+      return 1
+    fi
+  done
+
+  # 11. Verify release-manifest.json SHA matches actual manifest content.
+  local manifest_recorded_sha manifest_actual_sha
+  manifest_recorded_sha=$(printf '%s\n' "$SHA256SUMS_CONTENT" | \
+    awk -v f="release-manifest.json" '$NF == f {print $1; exit}')
+  if command -v shasum >/dev/null 2>&1; then
+    manifest_actual_sha=$(printf '%s' "$manifest_json" | shasum -a 256 | awk '{print $1}')
+  elif command -v sha256sum >/dev/null 2>&1; then
+    manifest_actual_sha=$(printf '%s' "$manifest_json" | sha256sum | awk '{print $1}')
+  else
+    echo "ERROR: no SHA256 tool available (shasum/sha256sum)" >&2
+    return 1
+  fi
+  if [ "$(printf '%s' "$manifest_recorded_sha" | tr 'A-F' 'a-f')" != "$(printf '%s' "$manifest_actual_sha" | tr 'A-F' 'a-f')" ]; then
+    echo "ERROR: SHA256SUMS release-manifest.json SHA ($manifest_recorded_sha) does not match actual manifest content ($manifest_actual_sha)" >&2
+    return 1
+  fi
+
+  echo "OK: nginx_build release $tag verified (manifest, assets, sha256, version, SHA256SUMS consistency)" >&2
   return 0
 }
 
