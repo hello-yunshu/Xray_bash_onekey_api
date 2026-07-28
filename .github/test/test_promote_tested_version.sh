@@ -189,13 +189,27 @@ make_release_json() {
 # nginx_build release JSON with manifest asset
 make_nginx_build_release_json() {
   local version="$1"
-  printf '{"tag_name": "v%s", "assets": [{"name": "release-manifest.json", "browser_download_url": "https://example.com/manifest_%s.json"}]}' "$version" "$version"
+  printf '{"tag_name": "v%s", "assets": [
+    {"name": "release-manifest.json", "browser_download_url": "https://example.com/manifest_%s.json"},
+    {"name": "SHA256SUMS", "browser_download_url": "https://example.com/SHA256SUMS"},
+    {"name": "xray-nginx-custom-x86.tar.gz", "browser_download_url": "https://example.com/x86.tar.gz"},
+    {"name": "xray-nginx-custom-arm.tar.gz", "browser_download_url": "https://example.com/arm.tar.gz"}
+  ]}' "$version" "$version"
 }
 
 # nginx_build release JSON WITHOUT manifest asset
 make_nginx_build_release_no_manifest() {
   local version="$1"
   printf '{"tag_name": "v%s", "assets": [{"name": "xray-nginx-custom-x86.tar.gz", "browser_download_url": "https://example.com/x86.tar.gz"}]}' "$version"
+}
+
+make_nginx_build_release_no_arm() {
+  local version="$1"
+  printf '{"tag_name": "v%s", "assets": [
+    {"name": "release-manifest.json", "browser_download_url": "https://example.com/manifest_%s.json"},
+    {"name": "SHA256SUMS", "browser_download_url": "https://example.com/SHA256SUMS"},
+    {"name": "xray-nginx-custom-x86.tar.gz", "browser_download_url": "https://example.com/x86.tar.gz"}
+  ]}' "$version" "$version"
 }
 
 # Manifest JSON with SHA256
@@ -206,8 +220,8 @@ make_manifest_valid() {
     "tag": "v%s",
     "versions": {"nginx_build": "%s", "nginx": "1.28.1"},
     "assets": [
-      {"arch": "x86", "filename": "xray-nginx-custom-x86.tar.gz", "sha256": "abc123def456", "size_bytes": 12345},
-      {"arch": "arm", "filename": "xray-nginx-custom-arm.tar.gz", "sha256": "def789ghi012", "size_bytes": 12346}
+      {"arch": "x86", "filename": "xray-nginx-custom-x86.tar.gz", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size_bytes": 12345},
+      {"arch": "arm", "filename": "xray-nginx-custom-arm.tar.gz", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "size_bytes": 12346}
     ]
   }' "$version" "$version"
 }
@@ -219,7 +233,8 @@ make_manifest_no_sha() {
     "schema_version": 1,
     "versions": {"nginx_build": "%s"},
     "assets": [
-      {"arch": "x86", "filename": "xray-nginx-custom-x86.tar.gz", "sha256": "", "size_bytes": 12345}
+      {"arch": "x86", "filename": "xray-nginx-custom-x86.tar.gz", "sha256": "", "size_bytes": 12345},
+      {"arch": "arm", "filename": "xray-nginx-custom-arm.tar.gz", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "size_bytes": 12346}
     ]
   }' "$version"
 }
@@ -235,6 +250,18 @@ make_manifest_version_mismatch() {
       {"arch": "x86", "filename": "xray-nginx-custom-x86.tar.gz", "sha256": "abc123", "size_bytes": 12345}
     ]
   }' "$wrong_version"
+}
+
+make_manifest_no_arm() {
+  local version="$1"
+  printf '{
+    "schema_version": 1,
+    "tag": "v%s",
+    "versions": {"nginx_build": "%s"},
+    "assets": [
+      {"arch": "x86", "filename": "xray-nginx-custom-x86.tar.gz", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+    ]
+  }' "$version" "$version"
 }
 
 # Commit history JSON for shell
@@ -412,6 +439,32 @@ mock_http_shell_not_found() {
   esac
 }
 
+# Mock: history list succeeds but one historical install.sh fetch fails.
+mock_http_shell_history_fetch_fail() {
+  local url="$1"
+  case "$url" in
+    */main/install.sh)
+      FETCH_HTTP_CODE="200"
+      make_install_sh "3.0.1"
+      return 0
+      ;;
+    *"/commits?path=install.sh"*)
+      FETCH_HTTP_CODE="200"
+      make_commits_json "abc123" "def456"
+      return 0
+      ;;
+    */abc123/install.sh)
+      FETCH_HTTP_CODE="000"
+      return 1
+      ;;
+    *)
+      FETCH_HTTP_CODE="200"
+      make_install_sh "2.8.3"
+      return 0
+      ;;
+  esac
+}
+
 # Mock: xray release exists (valid)
 mock_http_xray_valid() {
   local url="$1"
@@ -498,6 +551,46 @@ mock_http_nginx_build_version_mismatch() {
     *"/manifest_2025.12.23.json"*)
       FETCH_HTTP_CODE="200"
       make_manifest_version_mismatch "2025.12.23" "2025.12.24"
+      return 0
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+
+mock_http_nginx_build_release_no_arm() {
+  local url="$1"
+  case "$url" in
+    *"/releases/tags/v2025.12.23"*)
+      FETCH_HTTP_CODE="200"
+      make_nginx_build_release_no_arm "2025.12.23"
+      return 0
+      ;;
+    *"/manifest_2025.12.23.json"*)
+      FETCH_HTTP_CODE="200"
+      make_manifest_valid "2025.12.23"
+      return 0
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+
+mock_http_nginx_build_manifest_no_arm() {
+  local url="$1"
+  case "$url" in
+    *"/releases/tags/v2025.12.23"*)
+      FETCH_HTTP_CODE="200"
+      make_nginx_build_release_json "2025.12.23"
+      return 0
+      ;;
+    *"/manifest_2025.12.23.json"*)
+      FETCH_HTTP_CODE="200"
+      make_manifest_no_arm "2025.12.23"
       return 0
       ;;
     *)
@@ -603,6 +696,15 @@ EXIT_CODE=$?
 assert_rejected "T06: tag not found (404) rejects promotion" "$EXIT_CODE"
 cleanup_temp_repo "$TMPDIR_TEST"
 
+# T06b: Any historical shell fetch failure makes verification inconclusive.
+TMPDIR_TEST=$(setup_temp_repo)
+http_get() { mock_http_shell_history_fetch_fail "$@"; }
+OUTPUT=$(promote_component "shell" "2.8.3" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_rejected "T06b: historical shell fetch failure rejects promotion" "$EXIT_CODE"
+assert_contains "T06b: error mentions failed historical fetch" "could not fetch" "$OUTPUT"
+cleanup_temp_repo "$TMPDIR_TEST"
+
 # T07: nginx_build release missing manifest → reject
 TMPDIR_TEST=$(setup_temp_repo)
 http_get() { mock_http_nginx_build_no_manifest "$@"; }
@@ -636,6 +738,20 @@ http_get() { mock_http_nginx_build_html "$@"; }
 OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
 EXIT_CODE=$?
 assert_rejected "T10: nginx_build HTML response rejects" "$EXIT_CODE"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+TMPDIR_TEST=$(setup_temp_repo)
+http_get() { mock_http_nginx_build_release_no_arm "$@"; }
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_rejected "T10b: release missing arm asset rejects" "$EXIT_CODE"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+TMPDIR_TEST=$(setup_temp_repo)
+http_get() { mock_http_nginx_build_manifest_no_arm "$@"; }
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_rejected "T10c: manifest missing arm contract rejects" "$EXIT_CODE"
 cleanup_temp_repo "$TMPDIR_TEST"
 
 # ============================================================================

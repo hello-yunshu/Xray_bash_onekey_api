@@ -200,9 +200,13 @@ verify_shell_upstream() {
     [ -z "$sha" ] && continue
     local commit_body ver_at_sha
     commit_body=$(http_get "${SHELL_RAW_BASE}/${sha}/install.sh") || {
-      echo "WARN: could not fetch install.sh at commit $sha (HTTP ${FETCH_HTTP_CODE}), skipping" >&2
-      continue
+      echo "ERROR: could not fetch install.sh at commit $sha (HTTP ${FETCH_HTTP_CODE})" >&2
+      return 1
     }
+    if printf '%s' "$commit_body" | grep -qi '^<html\|^<!DOCTYPE'; then
+      echo "ERROR: install.sh at commit $sha returned HTML" >&2
+      return 1
+    fi
     ver_at_sha=$(printf '%s\n' "$commit_body" | grep '^shell_version=' | head -1 | awk -F'=|"' '{print $3}')
     if [ "$ver_at_sha" = "$version" ]; then
       echo "OK: shell_version=$version found at commit $sha" >&2
@@ -279,13 +283,24 @@ verify_nginx_build_release() {
     return 1
   fi
 
-  # 2. Find release-manifest.json asset in the release
-  local manifest_url
+  # 2. Require the release tag, manifest, checksum list, and both architecture assets.
+  local release_tag manifest_url release_asset_names
+  release_tag=$(printf '%s' "$release_json" | "$JQ_BIN" -r '.tag_name // empty' 2>/dev/null)
+  if [ "$release_tag" != "$tag" ]; then
+    echo "ERROR: release tag ($release_tag) does not match expected $tag" >&2
+    return 1
+  fi
+
+  release_asset_names=$(printf '%s' "$release_json" | "$JQ_BIN" -r '.assets[]?.name // empty' 2>/dev/null)
   manifest_url=$(printf '%s' "$release_json" | "$JQ_BIN" -r \
     '.assets[]? | select(.name == "release-manifest.json") | .browser_download_url // empty' 2>/dev/null)
 
   if [ -z "$manifest_url" ] || [ "$manifest_url" = "null" ]; then
     echo "ERROR: release-manifest.json asset not found in release $tag" >&2
+    return 1
+  fi
+  if ! printf '%s\n' "$release_asset_names" | grep -qx 'SHA256SUMS'; then
+    echo "ERROR: SHA256SUMS asset not found in release $tag" >&2
     return 1
   fi
 
@@ -317,20 +332,26 @@ verify_nginx_build_release() {
     return 1
   fi
 
-  # 5. Verify manifest has assets array with at least one entry
-  local asset_count
-  asset_count=$(printf '%s' "$manifest_json" | "$JQ_BIN" -r \
-    '.assets | if type == "array" then length else 0 end' 2>/dev/null)
+  # 5. Require exactly the x86 and arm contracts used by the installer.
+  local arch manifest_filename
+  for arch in x86 arm; do
+    manifest_filename=$(printf '%s' "$manifest_json" | "$JQ_BIN" -r \
+      --arg arch "$arch" '.assets[]? | select(.arch == $arch) | .filename // empty' 2>/dev/null)
+    if [ -z "$manifest_filename" ]; then
+      echo "ERROR: manifest is missing $arch architecture asset" >&2
+      return 1
+    fi
+    if ! printf '%s\n' "$release_asset_names" | grep -Fqx "$manifest_filename"; then
+      echo "ERROR: manifest $arch asset is absent from release: $manifest_filename" >&2
+      return 1
+    fi
+  done
 
-  if [ -z "$asset_count" ] || [ "$asset_count" = "null" ] || [ "$asset_count" -lt 1 ]; then
-    echo "ERROR: manifest has no architecture assets" >&2
-    return 1
-  fi
-
-  # 6. Verify each asset has a non-empty sha256 field
+  # 6. Every manifest asset needs a canonical SHA-256 digest.
   local assets_without_sha
   assets_without_sha=$(printf '%s' "$manifest_json" | "$JQ_BIN" -r \
-    '.assets[] | select(.sha256 == null or .sha256 == "") | .arch // .filename // "unknown"' 2>/dev/null)
+    '.assets[]? | select((.sha256 // "") | test("^[0-9a-fA-F]{64}$") | not) |
+     .arch // .filename // "unknown"' 2>/dev/null)
 
   if [ -n "$assets_without_sha" ]; then
     echo "ERROR: manifest assets missing sha256: $assets_without_sha" >&2
@@ -414,7 +435,11 @@ check_consistency() {
   for comp in shell xray nginx openssl jemalloc nginx_build; do
     short_val=$("$JQ_BIN" -r --arg c "$comp" '.[$c] // empty' "$tested_file" 2>/dev/null)
     long_val=$("$JQ_BIN" -r ".${comp}_tested_version // empty" "$versions_file" 2>/dev/null)
-    if [ -n "$short_val" ] && [ -n "$long_val" ] && [ "$short_val" != "$long_val" ]; then
+    if [ -z "$short_val" ] || [ -z "$long_val" ]; then
+      echo "ERROR: consistency field missing for $comp" >&2
+      return 1
+    fi
+    if [ "$short_val" != "$long_val" ]; then
       echo "ERROR: consistency mismatch for $comp: $tested_file=$short_val != $versions_file=${comp}_tested_version=$long_val" >&2
       return 1
     fi
@@ -435,7 +460,11 @@ check_online_unchanged() {
   for comp in shell xray nginx openssl jemalloc nginx_build; do
     old_online=$("$JQ_BIN" -r ".${comp}_online_version // empty" "$old_file" 2>/dev/null)
     new_online=$("$JQ_BIN" -r ".${comp}_online_version // empty" "$new_file" 2>/dev/null)
-    if [ -n "$old_online" ] && [ "$old_online" != "$new_online" ]; then
+    if [ -z "$old_online" ] || [ -z "$new_online" ]; then
+      echo "ERROR: ${comp}_online_version is missing" >&2
+      return 1
+    fi
+    if [ "$old_online" != "$new_online" ]; then
       echo "ERROR: ${comp}_online_version changed: $old_online -> $new_online" >&2
       return 1
     fi
@@ -529,7 +558,11 @@ promote_component() {
     return 1
   fi
 
-  mv "${tested_file}.tmp" "$tested_file"
+  if ! mv "${tested_file}.tmp" "$tested_file"; then
+    echo "ERROR: failed to atomically replace $tested_file" >&2
+    rm -f "$snap_tested" "$snap_versions" "${tested_file}.tmp"
+    return 1
+  fi
 
   # --- Update xray_shell_versions.json (tested_version + metadata) ---
   local tested_field="${component}_tested_version"
@@ -563,7 +596,12 @@ promote_component() {
     return 1
   fi
 
-  mv "${versions_file}.tmp" "$versions_file"
+  if ! mv "${versions_file}.tmp" "$versions_file"; then
+    echo "ERROR: failed to atomically replace $versions_file" >&2
+    cp "$snap_tested" "$tested_file"
+    rm -f "$snap_tested" "$snap_versions" "${versions_file}.tmp"
+    return 1
+  fi
 
   # --- Snapshot comparison: only target fields changed ---
 
