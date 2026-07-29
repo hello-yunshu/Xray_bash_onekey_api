@@ -292,6 +292,41 @@ compute_sha256_str() {
   fi
 }
 
+# P0-5: Compute SHA256 of a file's exact bytes (byte-exact, including trailing
+# newlines). Mirrors how the script under test computes the manifest digest via
+# `shasum -a 256 "$manifest_file"`.
+compute_sha256_file() {
+  local file="$1"
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$file" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file" | awk '{print $1}'
+  else
+    return 1
+  fi
+}
+
+# P0-5: Compute SHA256 of content as if written to a file with a specified
+# trailing-newline policy. This mirrors how http_download_file writes bytes to
+# disk (preserving exact bytes including any trailing newline), so the digest
+# matches what the script under test will compute over the downloaded file.
+# Args: content_string, trailing_newline ("yes" or "no")
+compute_sha256_content_as_file() {
+  local content="$1"
+  local trailing="$2"
+  local tmp
+  tmp=$(mktemp) || return 1
+  if [ "$trailing" = "yes" ]; then
+    printf '%s\n' "$content" > "$tmp"
+  else
+    printf '%s' "$content" > "$tmp"
+  fi
+  compute_sha256_file "$tmp"
+  local rc=$?
+  rm -f "$tmp"
+  return $rc
+}
+
 # Generate SHA256SUMS content.
 # Args: x86_sha arm_sha manifest_sha
 make_sha256sums() {
@@ -970,6 +1005,30 @@ mock_http_tag_exists() {
 }
 
 # ============================================================================
+# P0-5: Default http_download_file mock.
+# Delegates to the current http_get mock, capturing stdout to a temp file so
+# that FETCH_HTTP_CODE (set in the current shell, not a subshell) is preserved.
+# Writes the captured body to the requested output file.
+# Individual test cases may override http_download_file for byte-exact scenarios
+# (e.g., trailing-newline checksum tests).
+# ============================================================================
+http_download_file() {
+  local url="$1"
+  local output="$2"
+  local tmp_capture
+  tmp_capture=$(mktemp) || return 1
+  http_get "$url" > "$tmp_capture"
+  local rc=$?
+  if [ $rc -ne 0 ] || [ ! -s "$tmp_capture" ]; then
+    rm -f "$tmp_capture" "$output"
+    return 1
+  fi
+  cp "$tmp_capture" "$output"
+  rm -f "$tmp_capture"
+  return 0
+}
+
+# ============================================================================
 # Tests: Upstream verification (fail-closed)
 # ============================================================================
 
@@ -1240,6 +1299,355 @@ OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_ve
 EXIT_CODE=$?
 assert_rejected "T14j: manifest SHA record wrong rejects" "$EXIT_CODE"
 assert_contains "T14j: error mentions release-manifest.json SHA" "release-manifest.json" "$OUTPUT"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+# ============================================================================
+# P0-5: Byte-exact manifest file SHA tests (trailing newline scenarios)
+# Tests that the script computes SHA over the actual downloaded file bytes,
+# NOT over a shell variable that lost its trailing newline via $(...).
+# ============================================================================
+
+echo ""
+echo "=============================================="
+echo "  Testing P0-5 byte-exact manifest SHA"
+echo "=============================================="
+echo ""
+
+# T14k: manifest file WITH trailing newline, SHA256SUMS SHA over WITH-newline → promotes
+# Proves that a real Release asset ending in \n (common) passes when SHA is
+# computed over file bytes (not shell-stripped variable).
+TMPDIR_TEST=$(setup_temp_repo)
+T14K_CONTENT=$(make_manifest_valid "2025.12.23")
+T14K_SHA=$(compute_sha256_content_as_file "$T14K_CONTENT" "yes")
+http_get() {
+  local url="$1"
+  case "$url" in
+    *"/releases/tags/v2025.12.23"*)
+      FETCH_HTTP_CODE="200"
+      make_nginx_build_release_json "2025.12.23"
+      return 0
+      ;;
+    *"/manifest_2025.12.23.json"*)
+      FETCH_HTTP_CODE="200"
+      make_manifest_valid "2025.12.23"
+      printf '\n'
+      return 0
+      ;;
+    *"/SHA256SUMS"*)
+      FETCH_HTTP_CODE="200"
+      make_sha256sums \
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+        "$T14K_SHA"
+      return 0
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_promoted "T14k: manifest with trailing newline promotes (byte-exact SHA)" "$EXIT_CODE"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+# T14l: manifest file WITHOUT trailing newline, SHA256SUMS SHA over NO-newline → promotes
+# Proves that a Release asset with no trailing \n also passes.
+TMPDIR_TEST=$(setup_temp_repo)
+T14L_CONTENT=$(make_manifest_valid "2025.12.23")
+T14L_SHA=$(compute_sha256_content_as_file "$T14L_CONTENT" "no")
+http_get() {
+  local url="$1"
+  case "$url" in
+    *"/releases/tags/v2025.12.23"*)
+      FETCH_HTTP_CODE="200"
+      make_nginx_build_release_json "2025.12.23"
+      return 0
+      ;;
+    *"/manifest_2025.12.23.json"*)
+      FETCH_HTTP_CODE="200"
+      make_manifest_valid "2025.12.23"
+      return 0
+      ;;
+    *"/SHA256SUMS"*)
+      FETCH_HTTP_CODE="200"
+      make_sha256sums \
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+        "$T14L_SHA"
+      return 0
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_promoted "T14l: manifest without trailing newline promotes (byte-exact SHA)" "$EXIT_CODE"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+# T14m: SHA256SUMS file itself WITH trailing newline → promotes
+# Proves that a trailing newline in SHA256SUMS (common) doesn't break awk parsing.
+TMPDIR_TEST=$(setup_temp_repo)
+T14M_CONTENT=$(make_manifest_valid "2025.12.23")
+T14M_SHA=$(compute_sha256_content_as_file "$T14M_CONTENT" "no")
+http_get() {
+  local url="$1"
+  case "$url" in
+    *"/releases/tags/v2025.12.23"*)
+      FETCH_HTTP_CODE="200"
+      make_nginx_build_release_json "2025.12.23"
+      return 0
+      ;;
+    *"/manifest_2025.12.23.json"*)
+      FETCH_HTTP_CODE="200"
+      make_manifest_valid "2025.12.23"
+      return 0
+      ;;
+    *"/SHA256SUMS"*)
+      FETCH_HTTP_CODE="200"
+      make_sha256sums \
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+        "$T14M_SHA"
+      printf '\n'
+      return 0
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_promoted "T14m: SHA256SUMS with trailing newline promotes" "$EXIT_CODE"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+# T14n: manifest file WITH trailing newline, SHA256SUMS SHA over NO-newline → reject
+# P0-5 core bug scenario: if SHA were computed via $(http_get) (which strips \n),
+# the digest would match SHA256SUMS (also stripped). But the file on disk STILL
+# has the \n, so file-based SHA correctly detects the mismatch and rejects.
+TMPDIR_TEST=$(setup_temp_repo)
+T14N_CONTENT=$(make_manifest_valid "2025.12.23")
+T14N_STRIPPED_SHA=$(compute_sha256_content_as_file "$T14N_CONTENT" "no")
+http_get() {
+  local url="$1"
+  case "$url" in
+    *"/releases/tags/v2025.12.23"*)
+      FETCH_HTTP_CODE="200"
+      make_nginx_build_release_json "2025.12.23"
+      return 0
+      ;;
+    *"/manifest_2025.12.23.json"*)
+      FETCH_HTTP_CODE="200"
+      make_manifest_valid "2025.12.23"
+      printf '\n'
+      return 0
+      ;;
+    *"/SHA256SUMS"*)
+      FETCH_HTTP_CODE="200"
+      make_sha256sums \
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+        "$T14N_STRIPPED_SHA"
+      return 0
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_rejected "T14n: manifest WITH newline + SHA256SUMS stripped SHA rejects" "$EXIT_CODE"
+assert_contains "T14n: error mentions manifest file bytes" "manifest file bytes" "$OUTPUT"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+# T14o: manifest file WITHOUT trailing newline, SHA256SUMS SHA over WITH-newline → reject
+# Mirror of T14n: file has no \n, but SHA256SUMS has SHA of content WITH \n.
+TMPDIR_TEST=$(setup_temp_repo)
+T14O_CONTENT=$(make_manifest_valid "2025.12.23")
+T14O_WITH_NL_SHA=$(compute_sha256_content_as_file "$T14O_CONTENT" "yes")
+http_get() {
+  local url="$1"
+  case "$url" in
+    *"/releases/tags/v2025.12.23"*)
+      FETCH_HTTP_CODE="200"
+      make_nginx_build_release_json "2025.12.23"
+      return 0
+      ;;
+    *"/manifest_2025.12.23.json"*)
+      FETCH_HTTP_CODE="200"
+      make_manifest_valid "2025.12.23"
+      return 0
+      ;;
+    *"/SHA256SUMS"*)
+      FETCH_HTTP_CODE="200"
+      make_sha256sums \
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+        "$T14O_WITH_NL_SHA"
+      return 0
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_rejected "T14o: manifest WITHOUT newline + SHA256SUMS with-newline SHA rejects" "$EXIT_CODE"
+assert_contains "T14o: error mentions manifest file bytes" "manifest file bytes" "$OUTPUT"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+# T14p: manifest file with TWO trailing newlines, SHA256SUMS SHA over ONE-newline → reject
+# Proves that ANY byte difference (even an extra \n) is detected.
+TMPDIR_TEST=$(setup_temp_repo)
+T14P_CONTENT=$(make_manifest_valid "2025.12.23")
+T14P_ONE_NL_SHA=$(compute_sha256_content_as_file "$T14P_CONTENT" "yes")
+http_get() {
+  local url="$1"
+  case "$url" in
+    *"/releases/tags/v2025.12.23"*)
+      FETCH_HTTP_CODE="200"
+      make_nginx_build_release_json "2025.12.23"
+      return 0
+      ;;
+    *"/manifest_2025.12.23.json"*)
+      FETCH_HTTP_CODE="200"
+      make_manifest_valid "2025.12.23"
+      printf '\n\n'
+      return 0
+      ;;
+    *"/SHA256SUMS"*)
+      FETCH_HTTP_CODE="200"
+      make_sha256sums \
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+        "$T14P_ONE_NL_SHA"
+      return 0
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_rejected "T14p: manifest with two newlines + SHA256SUMS one-newline SHA rejects" "$EXIT_CODE"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+# T14q: manifest download returns HTML → reject
+# Proves that HTML content written to manifest_file is caught by is_valid_json.
+TMPDIR_TEST=$(setup_temp_repo)
+http_get() {
+  local url="$1"
+  case "$url" in
+    *"/releases/tags/v2025.12.23"*)
+      FETCH_HTTP_CODE="200"
+      make_nginx_build_release_json "2025.12.23"
+      return 0
+      ;;
+    *"/manifest_2025.12.23.json"*)
+      FETCH_HTTP_CODE="200"
+      printf '%s' "$FIXTURE_HTML"
+      return 0
+      ;;
+    *"/SHA256SUMS"*)
+      FETCH_HTTP_CODE="200"
+      make_sha256sums \
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      return 0
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_rejected "T14q: manifest download HTML rejects" "$EXIT_CODE"
+assert_contains "T14q: error mentions not valid JSON" "not valid JSON" "$OUTPUT"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+# T14r: manifest download returns empty file → reject
+# Proves that empty manifest content is caught by http_download_file's non-empty check.
+TMPDIR_TEST=$(setup_temp_repo)
+http_get() {
+  local url="$1"
+  case "$url" in
+    *"/releases/tags/v2025.12.23"*)
+      FETCH_HTTP_CODE="200"
+      make_nginx_build_release_json "2025.12.23"
+      return 0
+      ;;
+    *"/manifest_2025.12.23.json"*)
+      FETCH_HTTP_CODE="200"
+      return 0
+      ;;
+    *"/SHA256SUMS"*)
+      FETCH_HTTP_CODE="200"
+      make_sha256sums \
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      return 0
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_rejected "T14r: manifest download empty file rejects" "$EXIT_CODE"
+assert_contains "T14r: error mentions manifest download" "manifest" "$OUTPUT"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+# T14s: manifest download network failure → reject
+# Proves that manifest download failure (HTTP 000) is caught and rejected.
+TMPDIR_TEST=$(setup_temp_repo)
+http_get() {
+  local url="$1"
+  case "$url" in
+    *"/releases/tags/v2025.12.23"*)
+      FETCH_HTTP_CODE="200"
+      make_nginx_build_release_json "2025.12.23"
+      return 0
+      ;;
+    *"/manifest_2025.12.23.json"*)
+      FETCH_HTTP_CODE="000"
+      return 1
+      ;;
+    *"/SHA256SUMS"*)
+      FETCH_HTTP_CODE="200"
+      make_sha256sums \
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      return 0
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_rejected "T14s: manifest download network failure rejects" "$EXIT_CODE"
+assert_contains "T14s: error mentions manifest download" "manifest" "$OUTPUT"
 cleanup_temp_repo "$TMPDIR_TEST"
 
 # ============================================================================

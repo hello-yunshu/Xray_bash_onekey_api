@@ -40,6 +40,11 @@ FETCH_HTTP_CODE=""
 # Sets FETCH_HTTP_CODE ("000" = network failure, "200" = OK, etc.)
 # Outputs body on stdout.
 # Returns 0 on HTTP 200, 1 otherwise.
+#
+# WARNING: callers that capture via $(http_get ...) will lose trailing
+# newlines due to shell command substitution. For resources whose SHA256
+# must match the byte-exact Release asset (manifest, SHA256SUMS), use
+# http_download_file instead.
 http_get() {
   local url="$1"
   local tmp
@@ -55,6 +60,30 @@ http_get() {
     return 0
   fi
   return 1
+}
+
+# P0-5: Download a URL directly to a file, preserving exact bytes (including
+# trailing newlines). Required for manifest and SHA256SUMS whose digest must
+# match the byte-exact asset stored in the GitHub Release.
+#
+# Sets FETCH_HTTP_CODE ("000" = network failure, "200" = OK, etc.)
+# Args: url, output_file_path
+# Returns 0 on HTTP 200 and non-empty file, 1 otherwise (output removed).
+http_download_file() {
+  local url="$1"
+  local output="$2"
+  local code
+  code=$("$CURL_BIN" -sSL --max-time 30 -o "$output" -w '%{http_code}' "$url" 2>/dev/null) || {
+    FETCH_HTTP_CODE="000"
+    rm -f "$output"
+    return 1
+  }
+  FETCH_HTTP_CODE="$code"
+  if [ "$code" != "200" ] || [ ! -s "$output" ]; then
+    rm -f "$output"
+    return 1
+  fi
+  return 0
 }
 
 # Check if stdin is valid JSON (not HTML, not empty, not truncated).
@@ -261,9 +290,22 @@ verify_nginx_tag() {
 # Verify nginx_build release has: release/tag, release-manifest.json asset,
 # architecture assets, SHA256 fields, and version match.
 # Fail-closed on any missing requirement.
-verify_nginx_build_release() {
+#
+# P0-5: manifest and SHA256SUMS are downloaded to files (via http_download_file)
+# rather than captured via shell command substitution, so the SHA256 is computed
+# over the exact bytes stored in the GitHub Release asset (including any
+# trailing newline). This prevents false negatives where a legitimate Release
+# with a trailing newline in release-manifest.json fails promotion.
+#
+# File lifecycle is managed by the outer wrapper (verify_nginx_build_release),
+# which creates temp files before the call and removes them after. The inner
+# core function does NOT use trap RETURN (which would fire on every nested
+# function return and delete the files prematurely).
+_verify_nginx_build_release_core() {
   local version="$1"
   local tag="v${version}"
+  local manifest_file="$2"
+  local sha256sums_file="$3"
 
   # 1. Release must exist
   local release_json
@@ -284,7 +326,7 @@ verify_nginx_build_release() {
   fi
 
   # 2. Require the release tag, manifest, checksum list, and both architecture assets.
-  local release_tag manifest_url release_asset_names
+  local release_tag manifest_url release_asset_names sha256sums_url
   release_tag=$(printf '%s' "$release_json" | "$JQ_BIN" -r '.tag_name // empty' 2>/dev/null)
   if [ "$release_tag" != "$tag" ]; then
     echo "ERROR: release tag ($release_tag) does not match expected $tag" >&2
@@ -294,9 +336,15 @@ verify_nginx_build_release() {
   release_asset_names=$(printf '%s' "$release_json" | "$JQ_BIN" -r '.assets[]?.name // empty' 2>/dev/null)
   manifest_url=$(printf '%s' "$release_json" | "$JQ_BIN" -r \
     '.assets[]? | select(.name == "release-manifest.json") | .browser_download_url // empty' 2>/dev/null)
+  sha256sums_url=$(printf '%s' "$release_json" | "$JQ_BIN" -r \
+    '.assets[]? | select(.name == "SHA256SUMS") | .browser_download_url // empty' 2>/dev/null)
 
   if [ -z "$manifest_url" ] || [ "$manifest_url" = "null" ]; then
     echo "ERROR: release-manifest.json asset not found in release $tag" >&2
+    return 1
+  fi
+  if [ -z "$sha256sums_url" ] || [ "$sha256sums_url" = "null" ]; then
+    echo "ERROR: SHA256SUMS asset URL not found in release $tag" >&2
     return 1
   fi
   if ! printf '%s\n' "$release_asset_names" | grep -qx 'SHA256SUMS'; then
@@ -304,23 +352,22 @@ verify_nginx_build_release() {
     return 1
   fi
 
-  # 3. Download manifest (fail-closed)
-  local manifest_json
-  manifest_json=$(http_get "$manifest_url") || {
+  # 3. Download manifest to file (fail-closed). P0-5: byte-exact download.
+  if ! http_download_file "$manifest_url" "$manifest_file"; then
     echo "ERROR: failed to download release-manifest.json (HTTP $FETCH_HTTP_CODE)" >&2
     return 1
-  }
+  fi
 
   # Validate manifest is JSON
-  if ! printf '%s' "$manifest_json" | is_valid_json; then
+  if ! is_valid_json < "$manifest_file"; then
     echo "ERROR: release-manifest.json is not valid JSON" >&2
     return 1
   fi
 
   # 4. Verify manifest build/version matches input
   local manifest_build
-  manifest_build=$(printf '%s' "$manifest_json" | "$JQ_BIN" -r \
-    '.versions.nginx_build // .build // .version // empty' 2>/dev/null)
+  manifest_build=$("$JQ_BIN" -r \
+    '.versions.nginx_build // .build // .version // empty' "$manifest_file" 2>/dev/null)
 
   if [ -z "$manifest_build" ] || [ "$manifest_build" = "null" ]; then
     echo "ERROR: manifest has no build/version field" >&2
@@ -335,8 +382,8 @@ verify_nginx_build_release() {
   # 5. Require exactly the x86 and arm contracts used by the installer.
   local arch manifest_filename
   for arch in x86 arm; do
-    manifest_filename=$(printf '%s' "$manifest_json" | "$JQ_BIN" -r \
-      --arg arch "$arch" '.assets[]? | select(.arch == $arch) | .filename // empty' 2>/dev/null)
+    manifest_filename=$("$JQ_BIN" -r \
+      --arg arch "$arch" '.assets[]? | select(.arch == $arch) | .filename // empty' "$manifest_file" 2>/dev/null)
     if [ -z "$manifest_filename" ]; then
       echo "ERROR: manifest is missing $arch architecture asset" >&2
       return 1
@@ -349,38 +396,27 @@ verify_nginx_build_release() {
 
   # 6. Every manifest asset needs a canonical SHA-256 digest.
   local assets_without_sha
-  assets_without_sha=$(printf '%s' "$manifest_json" | "$JQ_BIN" -r \
+  assets_without_sha=$("$JQ_BIN" -r \
     '.assets[]? | select((.sha256 // "") | test("^[0-9a-fA-F]{64}$") | not) |
-     .arch // .filename // "unknown"' 2>/dev/null)
+     .arch // .filename // "unknown"' "$manifest_file" 2>/dev/null)
 
   if [ -n "$assets_without_sha" ]; then
     echo "ERROR: manifest assets missing sha256: $assets_without_sha" >&2
     return 1
   fi
 
-  # 7. Download SHA256SUMS content and verify consistency (fail-closed).
-  #    The resource name was checked in step 2; here we actually fetch the
-  #    content and cross-check every digest against the manifest.
-  local sha256sums_url
-  sha256sums_url=$(printf '%s' "$release_json" | "$JQ_BIN" -r \
-    '.assets[]? | select(.name == "SHA256SUMS") | .browser_download_url // empty' 2>/dev/null)
-  if [ -z "$sha256sums_url" ] || [ "$sha256sums_url" = "null" ]; then
-    echo "ERROR: SHA256SUMS asset URL not found in release $tag" >&2
+  # 7. Download SHA256SUMS to file (fail-closed). P0-5: byte-exact download.
+  if ! http_download_file "$sha256sums_url" "$sha256sums_file"; then
+    echo "ERROR: failed to download SHA256SUMS (HTTP $FETCH_HTTP_CODE)" >&2
     return 1
   fi
 
-  local SHA256SUMS_CONTENT
-  SHA256SUMS_CONTENT=$(http_get "$sha256sums_url") || {
-    echo "ERROR: failed to download SHA256SUMS (HTTP $FETCH_HTTP_CODE)" >&2
-    return 1
-  }
-
-  # 8. Reject HTML, empty, or truncated SHA256SUMS content.
-  if [ -z "$SHA256SUMS_CONTENT" ]; then
+  # 8. Reject HTML or empty SHA256SUMS content.
+  if [ ! -s "$sha256sums_file" ]; then
     echo "ERROR: SHA256SUMS content is empty" >&2
     return 1
   fi
-  if printf '%s' "$SHA256SUMS_CONTENT" | grep -qi '^<html\|^<!DOCTYPE'; then
+  if grep -qi '^<html\|^<!DOCTYPE' "$sha256sums_file"; then
     echo "ERROR: SHA256SUMS response is HTML, not checksum file" >&2
     return 1
   fi
@@ -391,8 +427,7 @@ verify_nginx_build_release() {
   local req_file
   for req_file in $required_files; do
     local sum_count sum_entry_sha
-    sum_count=$(printf '%s\n' "$SHA256SUMS_CONTENT" | \
-      awk -v f="$req_file" '$NF == f {c++} END {print c+0}')
+    sum_count=$(awk -v f="$req_file" '$NF == f {c++} END {print c+0}' "$sha256sums_file")
     if [ "$sum_count" -eq 0 ]; then
       echo "ERROR: SHA256SUMS missing entry for $req_file" >&2
       return 1
@@ -401,8 +436,7 @@ verify_nginx_build_release() {
       echo "ERROR: SHA256SUMS has $sum_count entries for $req_file (expected exactly 1)" >&2
       return 1
     fi
-    sum_entry_sha=$(printf '%s\n' "$SHA256SUMS_CONTENT" | \
-      awk -v f="$req_file" '$NF == f {print $1; exit}')
+    sum_entry_sha=$(awk -v f="$req_file" '$NF == f {print $1; exit}' "$sha256sums_file")
     if ! printf '%s' "$sum_entry_sha" | grep -qE '^[0-9a-fA-F]{64}$'; then
       echo "ERROR: SHA256SUMS entry for $req_file has invalid sha256 format: $sum_entry_sha" >&2
       return 1
@@ -410,12 +444,12 @@ verify_nginx_build_release() {
   done
 
   # 10. Verify manifest x86/arm filename and SHA match SHA256SUMS exactly.
-  local arch manifest_filename manifest_sha sum_sha canonical
+  local manifest_sha sum_sha canonical
   for arch in x86 arm; do
-    manifest_filename=$(printf '%s' "$manifest_json" | "$JQ_BIN" -r \
-      --arg arch "$arch" '.assets[]? | select(.arch == $arch) | .filename // empty' 2>/dev/null)
-    manifest_sha=$(printf '%s' "$manifest_json" | "$JQ_BIN" -r \
-      --arg arch "$arch" '.assets[]? | select(.arch == $arch) | .sha256 // empty' 2>/dev/null)
+    manifest_filename=$("$JQ_BIN" -r \
+      --arg arch "$arch" '.assets[]? | select(.arch == $arch) | .filename // empty' "$manifest_file" 2>/dev/null)
+    manifest_sha=$("$JQ_BIN" -r \
+      --arg arch "$arch" '.assets[]? | select(.arch == $arch) | .sha256 // empty' "$manifest_file" 2>/dev/null)
 
     case "$arch" in
       x86) canonical="xray-nginx-custom-x86.tar.gz" ;;
@@ -426,8 +460,7 @@ verify_nginx_build_release() {
       return 1
     fi
 
-    sum_sha=$(printf '%s\n' "$SHA256SUMS_CONTENT" | \
-      awk -v f="$manifest_filename" '$NF == f {print $1; exit}')
+    sum_sha=$(awk -v f="$manifest_filename" '$NF == f {print $1; exit}' "$sha256sums_file")
     if [ -z "$sum_sha" ]; then
       echo "ERROR: SHA256SUMS missing entry for $arch ($manifest_filename)" >&2
       return 1
@@ -438,25 +471,42 @@ verify_nginx_build_release() {
     fi
   done
 
-  # 11. Verify release-manifest.json SHA matches actual manifest content.
+  # 11. Verify release-manifest.json SHA matches actual manifest FILE bytes.
+  #     P0-5: digest is computed over the downloaded file (byte-exact, including
+  #     any trailing newline), not over a shell variable that lost its newline.
   local manifest_recorded_sha manifest_actual_sha
-  manifest_recorded_sha=$(printf '%s\n' "$SHA256SUMS_CONTENT" | \
-    awk -v f="release-manifest.json" '$NF == f {print $1; exit}')
+  manifest_recorded_sha=$(awk -v f="release-manifest.json" '$NF == f {print $1; exit}' "$sha256sums_file")
   if command -v shasum >/dev/null 2>&1; then
-    manifest_actual_sha=$(printf '%s' "$manifest_json" | shasum -a 256 | awk '{print $1}')
+    manifest_actual_sha=$(shasum -a 256 "$manifest_file" | awk '{print $1}')
   elif command -v sha256sum >/dev/null 2>&1; then
-    manifest_actual_sha=$(printf '%s' "$manifest_json" | sha256sum | awk '{print $1}')
+    manifest_actual_sha=$(sha256sum "$manifest_file" | awk '{print $1}')
   else
     echo "ERROR: no SHA256 tool available (shasum/sha256sum)" >&2
     return 1
   fi
   if [ "$(printf '%s' "$manifest_recorded_sha" | tr 'A-F' 'a-f')" != "$(printf '%s' "$manifest_actual_sha" | tr 'A-F' 'a-f')" ]; then
-    echo "ERROR: SHA256SUMS release-manifest.json SHA ($manifest_recorded_sha) does not match actual manifest content ($manifest_actual_sha)" >&2
+    echo "ERROR: SHA256SUMS release-manifest.json SHA ($manifest_recorded_sha) does not match actual manifest file bytes ($manifest_actual_sha)" >&2
     return 1
   fi
 
   echo "OK: nginx_build release $tag verified (manifest, assets, sha256, version, SHA256SUMS consistency)" >&2
   return 0
+}
+
+# Outer wrapper: manages temp file lifecycle for _verify_nginx_build_release_core.
+# This avoids trap RETURN (which would fire on every nested function return and
+# delete the temp files prematurely during http_download_file / http_get calls).
+verify_nginx_build_release() {
+  local version="$1"
+  local manifest_file sha256sums_file
+  manifest_file=$(mktemp) || return 1
+  sha256sums_file=$(mktemp) || { rm -f "$manifest_file"; return 1; }
+
+  _verify_nginx_build_release_core "$version" "$manifest_file" "$sha256sums_file"
+  local rc=$?
+
+  rm -f "$manifest_file" "$sha256sums_file"
+  return $rc
 }
 
 # ============================================================================
