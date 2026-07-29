@@ -1,0 +1,43 @@
+name: Phase 1 Tests
+
+on:
+  push:
+    branches:
+      - main
+      - work/phase1-optimization
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: phase1-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Validate shell and workflow sources
+        run: |
+          set -euo pipefail
+          bash -n validate-json.sh
+          bash -n .github/scripts/promote_tested_version.sh
+          bash -n .github/test/test_promote_tested_version.sh
+          bash -n .github/test/test_promote_validation.sh
+          shellcheck -S error \
+            validate-json.sh \
+            .github/scripts/promote_tested_version.sh \
+            .github/test/test_promote_tested_version.sh \
+            .github/test/test_promote_validation.sh
+
+      - name: Run API contract tests
+        run: |
+          set -euo pipefail
+          jq empty xray_shell_versions.json
+          jq empty tested_versions.json
+          bash validate-json.sh
+          bash .github/test/test_promote_tested_version.sh
+          bash .github/test/test_promote_validation.sh
