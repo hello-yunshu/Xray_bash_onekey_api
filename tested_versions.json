@@ -4,5 +4,5 @@
   "nginx": "1.28.1",
   "openssl": "3.6.0",
   "jemalloc": "5.3.0",
-  "nginx_build": "2025.12.23"
+  "nginx_build": "2026.06.17.6717"
 }
