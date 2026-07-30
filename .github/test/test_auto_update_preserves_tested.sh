@@ -9,6 +9,7 @@
 #   A — update online, tested unchanged (including tested_at / tested_note)
 #   B — online already latest → no meaningless write
 #   C — network/API failure → exit non-zero, JSON not polluted
+#   D — tested drift between the two JSON files → fail closed, no write/commit
 #
 # Promotion scenarios D-I are covered by test_promote_tested_version.sh:
 #   D — promote older-than-online real release (T14: nginx_build 2025.12.23 < online)
@@ -318,6 +319,70 @@ else
 fi
 
 cleanup_temp_repo "$TMP_C"
+
+# ============================================================================
+echo ""
+echo "=============================================="
+echo "  Scenario D: tested drift → fail closed, no write"
+echo "=============================================="
+echo ""
+# ============================================================================
+# Prompt requirement: when xray_shell_versions.json.nginx_build_tested_version
+# and tested_versions.json.nginx_build disagree, auto-update must:
+#   - return non-zero;
+#   - leave both JSON files byte-identical (unchanged);
+#   - produce no commit;
+#   - NOT overwrite either tested value to the other file (no auto-repair).
+#
+# validate-json.sh checks consistency BEFORE format, so "90" vs "91" triggers
+# the drift branch (not the format branch), proving the test exercises drift.
+
+DRIFT_TESTED=$(printf '%s\n' "$INIT_TESTED" | jq '.nginx_build = "91"')
+DRIFT_VERSIONS=$(printf '%s\n' "$INIT_VERSIONS" | jq '.nginx_build_tested_version = "90"')
+
+TMP_D=$(mktemp -d)
+printf '%s\n' "$DRIFT_TESTED" > "$TMP_D/tested_versions.json"
+printf '%s\n' "$DRIFT_VERSIONS" > "$TMP_D/xray_shell_versions.json"
+cp "$REPO_DIR/update-version.sh" "$TMP_D/update-version.sh"
+cp "$REPO_DIR/validate-json.sh" "$TMP_D/validate-json.sh"
+git -C "$TMP_D" init -q
+git -C "$TMP_D" config user.email "test@test.example"
+git -C "$TMP_D" config user.name "test"
+git -C "$TMP_D" add -A
+git -C "$TMP_D" commit -q -m init 2>/dev/null || true
+make_mock_curl "$TMP_D/curl"
+
+# Record byte-exact hashes and commit count BEFORE running auto-update.
+D_TESTED_HASH_BEFORE=$(hash_stdin < "$TMP_D/tested_versions.json")
+D_VERSIONS_HASH_BEFORE=$(hash_stdin < "$TMP_D/xray_shell_versions.json")
+D_COMMITS_BEFORE=$(git -C "$TMP_D" rev-list --count HEAD 2>/dev/null || echo 0)
+
+( cd "$TMP_D" && HOME="$TMP_D" PATH="$TMP_D:$PATH" bash update-version.sh ) >/dev/null 2>&1
+D_RC=$?
+
+if [ "$D_RC" -ne 0 ]; then
+  pass "D: update-version.sh exited non-zero on tested drift ($D_RC)"
+else
+  fail "D: update-version.sh should exit non-zero on tested drift"
+fi
+
+D_TESTED_HASH_AFTER=$(hash_stdin < "$TMP_D/tested_versions.json")
+D_VERSIONS_HASH_AFTER=$(hash_stdin < "$TMP_D/xray_shell_versions.json")
+D_COMMITS_AFTER=$(git -C "$TMP_D" rev-list --count HEAD 2>/dev/null || echo 0)
+
+assert_eq "D: tested_versions.json byte-identical (unchanged)" \
+  "$D_TESTED_HASH_BEFORE" "$D_TESTED_HASH_AFTER"
+assert_eq "D: xray_shell_versions.json byte-identical (unchanged)" \
+  "$D_VERSIONS_HASH_BEFORE" "$D_VERSIONS_HASH_AFTER"
+assert_eq "D: no commit produced" "$D_COMMITS_BEFORE" "$D_COMMITS_AFTER"
+
+# Neither tested value may be overwritten to the other file (no auto-repair).
+assert_eq "D: xray_shell_versions.json.nginx_build_tested_version still 90" \
+  "90" "$(jq -r '.nginx_build_tested_version' "$TMP_D/xray_shell_versions.json")"
+assert_eq "D: tested_versions.json.nginx_build still 91" \
+  "91" "$(jq -r '.nginx_build' "$TMP_D/tested_versions.json")"
+
+cleanup_temp_repo "$TMP_D"
 
 # ============================================================================
 echo ""

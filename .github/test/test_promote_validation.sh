@@ -140,31 +140,47 @@ done
 
 echo ""
 echo "--- Test: update-version.sh does NOT auto-copy online to tested ---"
-# Read update-version.sh and verify it reads tested from tested_versions.json
-# not from online_versions
-if grep -q 'tested_versions\[\$key\]' update-version.sh; then
-    pass "update-version.sh reads tested_version from tested_versions.json (not from online)"
+# update-version.sh must NEVER write *_tested_version, *_tested_at,
+# *_tested_note, or tested_versions.json. Only manual promotion may change
+# tested fields. Auto-update may only touch *_online_version / update_date /
+# shell_upgrade_details.
+if grep -qE '\*_tested_version|_tested_version.*\$' update-version.sh 2>/dev/null; then
+    # Distinguish comments from actual jq writes. A real write looks like:
+    #   jq ... '. * {"\($key)_tested_version": $value}'
+    if grep -qE 'jq.*_tested_version' update-version.sh; then
+        fail "update-version.sh writes *_tested_version (auto-flow must not modify tested)"
+    else
+        pass "update-version.sh only references _tested_version in comments (no writes)"
+    fi
 else
-    fail "update-version.sh may be auto-copying online to tested"
+    pass "update-version.sh does not reference _tested_version in any write path"
 fi
 
-# Verify update-version.sh writes tested_version from the tested_versions array
-# The pattern in update-version.sh is: ${tested_versions[$key]} ... _tested_version
-# (tested_versions array is referenced before _tested_version field name in the jq command)
-if grep -q 'tested_versions.*_tested_version\|_tested_version.*tested_versions' update-version.sh; then
-    pass "update-version.sh correctly maps tested_version from tested_versions.json"
+# Auto-update must NEVER write to tested_versions.json (only promotion does).
+if grep -qE '>\s*tested_versions\.json|git add.*tested_versions\.json' update-version.sh 2>/dev/null; then
+    fail "update-version.sh writes to tested_versions.json (only promotion may)"
 else
-    fail "update-version.sh may not correctly map tested_version"
+    pass "update-version.sh does not write to tested_versions.json"
+fi
+
+# Auto-update must NEVER write *_tested_at or *_tested_note.
+if grep -qE 'jq.*_tested_at|jq.*_tested_note' update-version.sh 2>/dev/null; then
+    fail "update-version.sh writes *_tested_at or *_tested_note (auto-flow must not)"
+else
+    pass "update-version.sh does not write *_tested_at or *_tested_note"
+fi
+
+# Auto-update must run validate-json.sh before any write, so tested drift
+# between the two JSON files causes fail-closed (no auto-repair).
+if grep -qE 'bash validate-json\.sh' update-version.sh 2>/dev/null; then
+    pass "update-version.sh runs validate-json.sh as a pre-flight check"
+else
+    fail "update-version.sh must run validate-json.sh before updates (fail-closed on drift)"
 fi
 
 # Verify there is no bulk copy of online to tested
-if grep -q 'online.*tested\|tested.*online' update-version.sh 2>/dev/null; then
-    # Check if it's actually copying (not just both being mentioned in comments)
-    if grep -qE '(tested_version.*=.*online_version|_tested_version.*\$new_value)' update-version.sh; then
-        fail "update-version.sh appears to copy online to tested"
-    else
-        pass "update-version.sh does not bulk-copy online to tested"
-    fi
+if grep -qE '(tested_version.*=.*online_version|_tested_version.*\$new_value)' update-version.sh 2>/dev/null; then
+    fail "update-version.sh appears to copy online to tested"
 else
     pass "update-version.sh does not bulk-copy online to tested"
 fi
