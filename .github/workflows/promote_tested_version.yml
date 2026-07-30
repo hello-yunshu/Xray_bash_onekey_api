@@ -1,0 +1,153 @@
+name: Promote Known-Good Version
+
+# Task B/P0-F: Single-component controlled promotion of tested_version.
+#
+# One component per run. The online_version is NEVER auto-copied to
+# tested_version. A human must explicitly promote a specific component
+# +version here.
+#
+# Fail-closed: any upstream verification failure (network error, API rate
+# limit, HTML response, missing tag/release, missing manifest, SHA mismatch,
+# version mismatch) aborts the promotion. Both JSON files are restored to
+# their pre-modification state on any failure.
+
+on:
+  workflow_dispatch:
+    inputs:
+      component:
+        description: 'Component to promote (shell | xray | nginx | openssl | jemalloc | nginx_build)'
+        required: true
+        type: choice
+        options:
+          - shell
+          - xray
+          - nginx
+          - openssl
+          - jemalloc
+          - nginx_build
+      version:
+        description: 'Version string to promote (must match upstream release format)'
+        required: true
+        type: string
+      note:
+        description: 'Optional reason or verification note (max 500 chars, control chars stripped)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install jq
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq jq
+
+      - name: Make promote script executable
+        run: chmod +x .github/scripts/promote_tested_version.sh
+
+      - name: Save old tested version for commit message
+        id: old_version
+        env:
+          COMPONENT: ${{ inputs.component }}
+        run: |
+          set -euo pipefail
+          OLD_TESTED=$(jq -r --arg c "${COMPONENT}" '.[$c]' tested_versions.json)
+          echo "old_tested=${OLD_TESTED}" >> "$GITHUB_OUTPUT"
+          echo "Current tested_version for ${COMPONENT}: ${OLD_TESTED}"
+
+      - name: Promote single component (fail-closed)
+        env:
+          COMPONENT: ${{ inputs.component }}
+          VERSION: ${{ inputs.version }}
+          NOTE: ${{ inputs.note }}
+        run: |
+          set -euo pipefail
+          bash .github/scripts/promote_tested_version.sh "${COMPONENT}" "${VERSION}" "${NOTE}"
+
+      - name: Verify only expected files changed
+        run: |
+          set -euo pipefail
+
+          # Check that only the two JSON files changed (no other files)
+          CHANGED=$(git status --porcelain | awk '{print $2}')
+          for f in $CHANGED; do
+            if [[ "$f" != "tested_versions.json" && "$f" != "xray_shell_versions.json" ]]; then
+              echo "::error::Unexpected file changed: $f"
+              exit 1
+            fi
+          done
+
+          # Verify both files have at least one change
+          if ! git diff --quiet tested_versions.json; then
+            echo "✅ tested_versions.json has changes"
+          else
+            echo "::error::tested_versions.json has no changes — promotion may have failed silently"
+            exit 1
+          fi
+
+          if ! git diff --quiet xray_shell_versions.json; then
+            echo "✅ xray_shell_versions.json has changes"
+          else
+            echo "::error::xray_shell_versions.json has no changes — promotion may have failed silently"
+            exit 1
+          fi
+
+          # Validate JSON syntax
+          jq empty tested_versions.json
+          jq empty xray_shell_versions.json
+          echo "✅ Both JSON files pass jq empty validation"
+
+          # Run full validation script
+          bash validate-json.sh
+          echo "✅ validate-json.sh passed"
+
+          # Verify only the target JSON paths changed (not other fields)
+          # The promote script already does this, but we double-check here
+          # to ensure no race condition or accidental modification.
+          COMPONENT="${{ inputs.component }}"
+          INPUT_VERSION="${{ inputs.version }}"
+
+          # tested_versions.json: the target component key must equal input version
+          ACTUAL_TESTED=$(jq -r --arg c "${COMPONENT}" '.[$c]' tested_versions.json)
+          if [ "$ACTUAL_TESTED" != "$INPUT_VERSION" ]; then
+            echo "::error::tested_versions.json[${COMPONENT}]='$ACTUAL_TESTED' != input '$INPUT_VERSION'"
+            exit 1
+          fi
+          echo "✅ tested_versions.json[${COMPONENT}] = $ACTUAL_TESTED"
+
+          # xray_shell_versions.json: the {component}_tested_version must equal input
+          ACTUAL_TESTED_LONG=$(jq -r --arg f "${COMPONENT}_tested_version" '.[$f] // ""' xray_shell_versions.json)
+          if [ "$ACTUAL_TESTED_LONG" != "$INPUT_VERSION" ]; then
+            echo "::error::xray_shell_versions.json[${COMPONENT}_tested_version]='$ACTUAL_TESTED_LONG' != input '$INPUT_VERSION'"
+            exit 1
+          fi
+          echo "✅ xray_shell_versions.json[${COMPONENT}_tested_version] = $ACTUAL_TESTED_LONG"
+
+          echo "✅ All pre-commit validations passed"
+
+      - name: Commit promoted version
+        env:
+          COMPONENT: ${{ inputs.component }}
+          VERSION: ${{ inputs.version }}
+          OLD_TESTED: ${{ steps.old_version.outputs.old_tested }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tested_versions.json xray_shell_versions.json
+          git commit -m "promote(${COMPONENT}): ${OLD_TESTED} → ${VERSION}
+
+          Single-component known-good promotion.
+          component: ${COMPONENT}
+          old: ${OLD_TESTED}
+          new: ${VERSION}
+          promoted_at: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          git push origin HEAD:"${GITHUB_REF_NAME:-main}"

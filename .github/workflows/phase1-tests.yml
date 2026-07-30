@@ -1,0 +1,48 @@
+name: Phase 1 Tests
+
+on:
+  push:
+    branches:
+      - main
+      - work/phase1-optimization
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: phase1-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Validate shell and workflow sources
+        run: |
+          set -euo pipefail
+          bash -n validate-json.sh
+          bash -n .github/scripts/promote_tested_version.sh
+          bash -n .github/test/test_promote_tested_version.sh
+          bash -n .github/test/test_promote_validation.sh
+          bash -n .github/test/test_auto_update_preserves_tested.sh
+          shellcheck -S error \
+            validate-json.sh \
+            .github/scripts/promote_tested_version.sh \
+            .github/test/test_promote_tested_version.sh \
+            .github/test/test_promote_validation.sh \
+            .github/test/test_auto_update_preserves_tested.sh
+
+      - name: Run API contract tests
+        run: |
+          set -euo pipefail
+          jq empty xray_shell_versions.json
+          jq empty tested_versions.json
+          bash validate-json.sh
+          bash .github/test/test_promote_tested_version.sh
+          bash .github/test/test_promote_validation.sh
+          # On CI (ubuntu-latest, bash 5+) this runs for real. On macOS bash 3.2
+          # it SKIPs (exit 77) because update-version.sh uses declare -A.
+          bash .github/test/test_auto_update_preserves_tested.sh

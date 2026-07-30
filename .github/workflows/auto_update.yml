@@ -5,15 +5,18 @@ on:
   schedule:
     - cron: '0 */2 * * *'
   push:
+    branches:
+      - main
     paths:
       - '.github/workflows/auto_update.yml'
       - 'update-version.sh'
       - 'validate-json.sh'
       - 'tested_versions.json'
-      - 'update_tested_versions.yml'
+      - '.github/workflows/promote_tested_version.yml'
 
 jobs:
   del_runs:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       actions: write
@@ -28,6 +31,7 @@ jobs:
           keep_minimum_runs: 3
           
   Auto-Update:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -38,7 +42,7 @@ jobs:
 
     - name: Install jq curl
       run: sudo apt-get update && sudo apt-get install -y jq curl
-    
+
     - name: Make scripts executable
       run: chmod +x update-version.sh validate-json.sh
     
@@ -59,12 +63,11 @@ jobs:
           echo "Running regular update script"
           bash update-version.sh
         fi
-        
+
     - name: Validate updated JSON
       id: validate_json
       run: |
-        ./validate-json.sh
-        if [ $? -ne 0 ]; then
+        if ! ./validate-json.sh; then
           echo "Validation failed. Restoring backup..."
           if [ -f xray_shell_versions_backup.json ]; then
             mv xray_shell_versions_backup.json xray_shell_versions.json
@@ -82,9 +85,8 @@ jobs:
       if: success() && steps.validate_json.outcome == 'success'
       run: |
         curl -f https://purge.jsdelivr.net/gh/hello-yunshu/Xray_bash_onekey_api@main/xray_shell_versions.json || echo "Failed to download the file"
-        
+
     - name: Cleanup
       if: always()
       run: |
         rm -f xray_shell_versions_backup.json
-        
