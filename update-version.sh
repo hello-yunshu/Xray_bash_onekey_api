@@ -87,7 +87,10 @@ current_versions=$(cat ${online_version_file})
 
 # 初始化更新标志和 JSON 数据
 update_required=false
-new_json=$(echo "{}")
+# Start from the current file so auto-update ONLY touches online fields and
+# update_date. tested_version / *_tested_at / *_tested_note and any other
+# existing metadata are preserved (auto-flow must never modify tested).
+new_json="$current_versions"
 
 # 添加更新日期
 new_json=$(echo "$new_json" | jq --arg date "$(date '+%Y-%m-%d %H:%M')" '. * {"update_date": $date}')
