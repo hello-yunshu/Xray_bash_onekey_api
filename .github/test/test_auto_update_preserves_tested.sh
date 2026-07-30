@@ -177,6 +177,7 @@ setup_temp_repo() {
   printf '%s\n' "$INIT_TESTED" > "$d/tested_versions.json"
   printf '%s\n' "$INIT_VERSIONS" > "$d/xray_shell_versions.json"
   cp "$REPO_DIR/update-version.sh" "$d/update-version.sh"
+  cp "$REPO_DIR/validate-json.sh" "$d/validate-json.sh"
   # Isolate git global config by pointing HOME at the temp dir.
   git -C "$d" init -q
   git -C "$d" config user.email "test@test.example"
