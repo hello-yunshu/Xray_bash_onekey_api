@@ -271,6 +271,7 @@ TMP_B=$(mktemp -d)
 printf '%s\n' "$INIT_TESTED" > "$TMP_B/tested_versions.json"
 printf '%s\n' "$B_VERSIONS" > "$TMP_B/xray_shell_versions.json"
 cp "$REPO_DIR/update-version.sh" "$TMP_B/update-version.sh"
+cp "$REPO_DIR/validate-json.sh" "$TMP_B/validate-json.sh"
 git -C "$TMP_B" init -q
 git -C "$TMP_B" config user.email "test@test.example"
 git -C "$TMP_B" config user.name "test"
