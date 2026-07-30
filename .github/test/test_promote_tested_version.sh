@@ -186,10 +186,37 @@ make_release_json() {
   printf '{"tag_name": "%s", "assets": []}' "$tag"
 }
 
-# nginx_build release JSON with manifest asset
+# nginx_build release JSON with manifest asset.
+# Explicitly sets draft=false and prerelease=false so the release is a valid
+# published stable release. Tests that need to verify draft/prerelease rejection
+# use make_nginx_build_release_draft / make_nginx_build_release_prerelease.
 make_nginx_build_release_json() {
   local version="$1"
-  printf '{"tag_name": "v%s", "assets": [
+  printf '{"tag_name": "v%s", "draft": false, "prerelease": false, "assets": [
+    {"name": "release-manifest.json", "browser_download_url": "https://example.com/manifest_%s.json"},
+    {"name": "SHA256SUMS", "browser_download_url": "https://example.com/SHA256SUMS"},
+    {"name": "xray-nginx-custom-x86.tar.gz", "browser_download_url": "https://example.com/x86.tar.gz"},
+    {"name": "xray-nginx-custom-arm.tar.gz", "browser_download_url": "https://example.com/arm.tar.gz"}
+  ]}' "$version" "$version"
+}
+
+# nginx_build release JSON marked as DRAFT (must be rejected by promotion).
+# Has all required assets but draft=true.
+make_nginx_build_release_draft() {
+  local version="$1"
+  printf '{"tag_name": "v%s", "draft": true, "prerelease": false, "assets": [
+    {"name": "release-manifest.json", "browser_download_url": "https://example.com/manifest_%s.json"},
+    {"name": "SHA256SUMS", "browser_download_url": "https://example.com/SHA256SUMS"},
+    {"name": "xray-nginx-custom-x86.tar.gz", "browser_download_url": "https://example.com/x86.tar.gz"},
+    {"name": "xray-nginx-custom-arm.tar.gz", "browser_download_url": "https://example.com/arm.tar.gz"}
+  ]}' "$version" "$version"
+}
+
+# nginx_build release JSON marked as PRERELEASE (must be rejected by promotion).
+# Has all required assets but prerelease=true.
+make_nginx_build_release_prerelease() {
+  local version="$1"
+  printf '{"tag_name": "v%s", "draft": false, "prerelease": true, "assets": [
     {"name": "release-manifest.json", "browser_download_url": "https://example.com/manifest_%s.json"},
     {"name": "SHA256SUMS", "browser_download_url": "https://example.com/SHA256SUMS"},
     {"name": "xray-nginx-custom-x86.tar.gz", "browser_download_url": "https://example.com/x86.tar.gz"},
@@ -987,6 +1014,38 @@ mock_http_nginx_build_html() {
   esac
 }
 
+# Mock: nginx_build release is a DRAFT (draft=true). Must be rejected.
+mock_http_nginx_build_draft_release() {
+  local url="$1"
+  case "$url" in
+    *"/releases/tags/v2025.12.23"*)
+      FETCH_HTTP_CODE="200"
+      make_nginx_build_release_draft "2025.12.23"
+      return 0
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+
+# Mock: nginx_build release is a PRERELEASE (prerelease=true). Must be rejected.
+mock_http_nginx_build_prerelease_release() {
+  local url="$1"
+  case "$url" in
+    *"/releases/tags/v2025.12.23"*)
+      FETCH_HTTP_CODE="200"
+      make_nginx_build_release_prerelease "2025.12.23"
+      return 0
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+
 # Mock: generic tag/release exists (for nginx, openssl, jemalloc)
 mock_http_tag_exists() {
   local url="$1"
@@ -1147,6 +1206,36 @@ http_get() { mock_http_nginx_build_manifest_no_arm "$@"; }
 OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
 EXIT_CODE=$?
 assert_rejected "T10c: manifest missing arm contract rejects" "$EXIT_CODE"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+# T10d: nginx_build release marked as DRAFT → reject
+# Even with all required assets present, a draft release must never be promoted
+# to tested_version. GitHub's /releases/tags/<tag> endpoint returns drafts, so
+# the promotion script must explicitly reject them (fail-closed).
+TMPDIR_TEST=$(setup_temp_repo)
+http_get() { mock_http_nginx_build_draft_release "$@"; }
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_rejected "T10d: draft release rejects" "$EXIT_CODE"
+assert_contains "T10d: error mentions draft" "draft" "$OUTPUT"
+# Verify files unchanged
+assert_eq "T10d: tested_versions.json unchanged" \
+  "$(jq -S . "$REPO_DIR/tested_versions.json")" \
+  "$(jq -S . "$TMPDIR_TEST/tested_versions.json")"
+cleanup_temp_repo "$TMPDIR_TEST"
+
+# T10e: nginx_build release marked as PRERELEASE → reject
+# A prerelease is not a stable published release and must not be promoted.
+TMPDIR_TEST=$(setup_temp_repo)
+http_get() { mock_http_nginx_build_prerelease_release "$@"; }
+OUTPUT=$(promote_component "nginx_build" "2025.12.23" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
+EXIT_CODE=$?
+assert_rejected "T10e: prerelease release rejects" "$EXIT_CODE"
+assert_contains "T10e: error mentions prerelease" "prerelease" "$OUTPUT"
+# Verify files unchanged
+assert_eq "T10e: tested_versions.json unchanged" \
+  "$(jq -S . "$REPO_DIR/tested_versions.json")" \
+  "$(jq -S . "$TMPDIR_TEST/tested_versions.json")"
 cleanup_temp_repo "$TMPDIR_TEST"
 
 # ============================================================================

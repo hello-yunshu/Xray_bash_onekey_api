@@ -333,6 +333,22 @@ _verify_nginx_build_release_core() {
     return 1
   fi
 
+  # Reject draft and prerelease releases. GitHub's /releases/tags/<tag> endpoint
+  # returns the release regardless of draft/prerelease status, so we must enforce
+  # explicitly that only stable published releases may be promoted to
+  # tested_version (fail-closed).
+  local is_draft is_prerelease
+  is_draft=$(printf '%s' "$release_json" | "$JQ_BIN" -r '.draft // false' 2>/dev/null)
+  is_prerelease=$(printf '%s' "$release_json" | "$JQ_BIN" -r '.prerelease // false' 2>/dev/null)
+  if [ "$is_draft" = "true" ]; then
+    echo "ERROR: release $tag is a draft — only published releases may be promoted" >&2
+    return 1
+  fi
+  if [ "$is_prerelease" = "true" ]; then
+    echo "ERROR: release $tag is a prerelease — only stable releases may be promoted" >&2
+    return 1
+  fi
+
   release_asset_names=$(printf '%s' "$release_json" | "$JQ_BIN" -r '.assets[]?.name // empty' 2>/dev/null)
   manifest_url=$(printf '%s' "$release_json" | "$JQ_BIN" -r \
     '.assets[]? | select(.name == "release-manifest.json") | .browser_download_url // empty' 2>/dev/null)
