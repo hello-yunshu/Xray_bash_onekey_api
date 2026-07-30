@@ -18,6 +18,14 @@ while IFS='=' read -r key value; do
     tested_versions["$key"]=$value
 done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' "$tested_versions_file")
 
+# 前置校验：两个 tested 文件必须一致且 JSON 合法。
+# 自动更新绝不能“修复” tested 漂移，漂移时直接 fail closed。
+if ! bash validate-json.sh >/dev/null 2>&1; then
+    echo "ERROR: validate-json.sh 失败 — tested 元数据不一致或 JSON 非法。" >&2
+    echo "ERROR: 拒绝执行自动更新，请人工解决 tested 漂移后再运行。" >&2
+    exit 1
+fi
+
 get_shell_version_from_content() {
     grep "shell_version=" | head -1 | awk -F '=|"' '{print $3}'
 }
@@ -87,7 +95,10 @@ current_versions=$(cat ${online_version_file})
 
 # 初始化更新标志和 JSON 数据
 update_required=false
-new_json=$(echo "{}")
+# Start from the current file so auto-update ONLY touches online fields and
+# update_date. tested_version / *_tested_at / *_tested_note and any other
+# existing metadata are preserved (auto-flow must never modify tested).
+new_json="$current_versions"
 
 # 添加更新日期
 new_json=$(echo "$new_json" | jq --arg date "$(date '+%Y-%m-%d %H:%M')" '. * {"update_date": $date}')
@@ -96,11 +107,12 @@ new_json=$(echo "$new_json" | jq --arg date "$(date '+%Y-%m-%d %H:%M')" '. * {"u
 for key in "${!tested_versions[@]}"; do
     current_value=$(echo "$current_versions" | jq -r ".${key}_online_version")
     new_value=${online_versions[$key]}
-    
-    # 更新 JSON 数据
+
+    # 自动更新只能修改 *_online_version / update_date / shell_upgrade_details。
+    # *_tested_version / *_tested_at / *_tested_note / tested_versions.json
+    # 由人工 promotion 维护，自动流程绝不写入。
     new_json=$(echo "$new_json" | jq --arg key "$key" --arg value "$new_value" '. * {"\($key)_online_version": $value}')
-    new_json=$(echo "$new_json" | jq --arg key "$key" --arg value "${tested_versions[$key]}" '. * {"\($key)_tested_version": $value}')
-    
+
     # 检查是否需要更新
     if [[ ${current_value} != ${new_value} || $force_regen == true ]]; then
         update_required=true
