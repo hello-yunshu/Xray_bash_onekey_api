@@ -319,7 +319,7 @@ compute_sha256_str() {
   fi
 }
 
-# P0-5: Compute SHA256 of a file's exact bytes (byte-exact, including trailing
+# Compute SHA256 of a file's exact bytes (byte-exact, including trailing
 # newlines). Mirrors how the script under test computes the manifest digest via
 # `shasum -a 256 "$manifest_file"`.
 compute_sha256_file() {
@@ -333,7 +333,7 @@ compute_sha256_file() {
   fi
 }
 
-# P0-5: Compute SHA256 of content as if written to a file with a specified
+# Compute SHA256 of content as if written to a file with a specified
 # trailing-newline policy. This mirrors how http_download_file writes bytes to
 # disk (preserving exact bytes including any trailing newline), so the digest
 # matches what the script under test will compute over the downloaded file.
@@ -1064,7 +1064,7 @@ mock_http_tag_exists() {
 }
 
 # ============================================================================
-# P0-5: Default http_download_file mock.
+# Default http_download_file mock.
 # Delegates to the current http_get mock, capturing stdout to a temp file so
 # that FETCH_HTTP_CODE (set in the current shell, not a subshell) is preserved.
 # Writes the captured body to the requested output file.
@@ -1292,7 +1292,7 @@ assert_eq "T14: nginx_build tested updated" "2025.12.23" "$NGINX_BUILD_TESTED"
 cleanup_temp_repo "$TMPDIR_TEST"
 
 # ============================================================================
-# Tests: SHA256SUMS consistency verification (P1-A)
+# Tests: SHA256SUMS consistency verification
 # ============================================================================
 
 echo ""
@@ -1391,7 +1391,7 @@ assert_contains "T14j: error mentions release-manifest.json SHA" "release-manife
 cleanup_temp_repo "$TMPDIR_TEST"
 
 # ============================================================================
-# P0-5: Byte-exact manifest file SHA tests (trailing newline scenarios)
+# Byte-exact manifest file SHA tests (trailing newline scenarios)
 # Tests that the script computes SHA over the actual downloaded file bytes,
 # NOT over a shell variable that lost its trailing newline via $(...).
 # ============================================================================
@@ -1517,7 +1517,7 @@ assert_promoted "T14m: SHA256SUMS with trailing newline promotes" "$EXIT_CODE"
 cleanup_temp_repo "$TMPDIR_TEST"
 
 # T14n: manifest file WITH trailing newline, SHA256SUMS SHA over NO-newline → reject
-# P0-5 core bug scenario: if SHA were computed via $(http_get) (which strips \n),
+# Core bug scenario: if SHA were computed via $(http_get) (which strips \n),
 # the digest would match SHA256SUMS (also stripped). But the file on disk STILL
 # has the \n, so file-based SHA correctly detects the mismatch and rejects.
 TMPDIR_TEST=$(setup_temp_repo)
