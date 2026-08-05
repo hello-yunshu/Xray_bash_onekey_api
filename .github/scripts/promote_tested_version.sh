@@ -62,7 +62,7 @@ http_get() {
   return 1
 }
 
-# P0-5: Download a URL directly to a file, preserving exact bytes (including
+# Download a URL directly to a file, preserving exact bytes (including
 # trailing newlines). Required for manifest and SHA256SUMS whose digest must
 # match the byte-exact asset stored in the GitHub Release.
 #
@@ -291,7 +291,7 @@ verify_nginx_tag() {
 # architecture assets, SHA256 fields, and version match.
 # Fail-closed on any missing requirement.
 #
-# P0-5: manifest and SHA256SUMS are downloaded to files (via http_download_file)
+# Manifest and SHA256SUMS are downloaded to files (via http_download_file)
 # rather than captured via shell command substitution, so the SHA256 is computed
 # over the exact bytes stored in the GitHub Release asset (including any
 # trailing newline). This prevents false negatives where a legitimate Release
@@ -368,7 +368,7 @@ _verify_nginx_build_release_core() {
     return 1
   fi
 
-  # 3. Download manifest to file (fail-closed). P0-5: byte-exact download.
+  # 3. Download manifest to file (fail-closed), byte-exact download.
   if ! http_download_file "$manifest_url" "$manifest_file"; then
     echo "ERROR: failed to download release-manifest.json (HTTP $FETCH_HTTP_CODE)" >&2
     return 1
@@ -421,7 +421,7 @@ _verify_nginx_build_release_core() {
     return 1
   fi
 
-  # 7. Download SHA256SUMS to file (fail-closed). P0-5: byte-exact download.
+  # 7. Download SHA256SUMS to file (fail-closed), byte-exact download.
   if ! http_download_file "$sha256sums_url" "$sha256sums_file"; then
     echo "ERROR: failed to download SHA256SUMS (HTTP $FETCH_HTTP_CODE)" >&2
     return 1
@@ -488,7 +488,7 @@ _verify_nginx_build_release_core() {
   done
 
   # 11. Verify release-manifest.json SHA matches actual manifest FILE bytes.
-  #     P0-5: digest is computed over the downloaded file (byte-exact, including
+  #     Digest is computed over the downloaded file (byte-exact, including
   #     any trailing newline), not over a shell variable that lost its newline.
   local manifest_recorded_sha manifest_actual_sha
   manifest_recorded_sha=$(awk -v f="release-manifest.json" '$NF == f {print $1; exit}' "$sha256sums_file")
