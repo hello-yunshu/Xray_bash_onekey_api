@@ -1,8 +1,8 @@
 {
-  "update_date": "2026-08-14 01:22",
-  "shell_online_version": "3.2.0",
+  "update_date": "2026-08-14 19:10",
+  "shell_online_version": "3.2.1",
   "shell_tested_version": "2.8.3",
-  "shell_upgrade_details": "feat: add safer Rill AI installation, localized status and diagnosis, and translation workflow verification",
+  "shell_upgrade_details": "release: publish shell 3.2.1",
   "nginx_build_online_version": "2026.07.15.6961",
   "nginx_build_tested_version": "2026.07.15.6961",
   "nginx_online_version": "1.30.4",
