@@ -2,9 +2,6 @@
 
 online_version_file="./xray_shell_versions.json"
 tested_versions_file="./tested_versions.json"
-shell_repo="hello-yunshu/Xray_bash_onekey"
-shell_raw_base="https://raw.githubusercontent.com/${shell_repo}"
-shell_install_url="${shell_raw_base}/main/install.sh"
 
 # 检查是否需要强制重新生成
 force_regen=false
@@ -26,56 +23,11 @@ if ! bash validate-json.sh >/dev/null 2>&1; then
     exit 1
 fi
 
-get_shell_version_from_content() {
-    grep "shell_version=" | head -1 | awk -F '=|"' '{print $3}'
-}
-
-get_shell_upgrade_details() {
-    local target_version="$1"
-    local commits_json sha version_at_sha matched_message message source_at_sha page shas
-
-    page=1
-    while true; do
-        commits_json=$(curl -fsSL "https://api.github.com/repos/${shell_repo}/commits?path=install.sh&per_page=100&page=${page}")
-        shas=$(printf '%s\n' "$commits_json" | jq -r '.[].sha')
-
-        [[ -z "$shas" ]] && break
-
-        while IFS= read -r sha; do
-            [[ -z "$sha" ]] && continue
-
-            source_at_sha=$(curl -fsSL "${shell_raw_base}/${sha}/install.sh")
-            version_at_sha=$(printf '%s\n' "$source_at_sha" | get_shell_version_from_content)
-
-            if [[ "$version_at_sha" == "$target_version" ]]; then
-                message=$(printf '%s\n' "$commits_json" | jq -r --arg sha "$sha" '.[] | select(.sha == $sha) | .commit.message | split("\n")[0]')
-                matched_message="$message"
-                continue
-            fi
-
-            if [[ -n "$matched_message" ]]; then
-                printf '%s\n' "$matched_message"
-                return 0
-            fi
-        done < <(printf '%s\n' "$shas")
-
-        page=$((page + 1))
-    done
-
-    if [[ -n "$matched_message" ]]; then
-        printf '%s\n' "$matched_message"
-        return 0
-    fi
-
-    echo "无法找到 shell_version ${target_version} 对应的 install.sh 提交" >&2
-    return 1
-}
-
 # 获取在线版本
 declare -A online_versions
 
-shell_install_source=$(curl -fsSL "$shell_install_url")
-online_versions["shell"]=$(printf '%s\n' "$shell_install_source" | get_shell_version_from_content)
+# Shell is Release-owned. This scheduled updater must not discover or publish
+# shell versions from a mutable branch; Release Xray updates the paired fields.
 online_versions["xray"]=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r .tag_name | sed 's/v//g')
 online_versions["nginx"]=$(curl -s https://api.github.com/repos/nginx/nginx/tags | jq -r .[].name | sed 's/release-//g' | grep "1\.[0-9][02468]\.*" | head -1)
 online_versions["openssl"]=$(curl -s https://api.github.com/repos/openssl/openssl/tags | jq -r .[].name | grep "3\.[0-9]\.[0-9]" | grep -v "3\.[0-9]\.[0-9]-" | awk -F '-' '{print $2}' | head -1)
@@ -105,6 +57,7 @@ new_json=$(echo "$new_json" | jq --arg date "$(date '+%Y-%m-%d %H:%M')" '. * {"u
 
 # 检查每个组件的版本
 for key in "${!tested_versions[@]}"; do
+    [[ "$key" == "shell" ]] && continue
     current_value=$(echo "$current_versions" | jq -r ".${key}_online_version")
     new_value=${online_versions[$key]}
 
@@ -116,17 +69,7 @@ for key in "${!tested_versions[@]}"; do
     # 检查是否需要更新
     if [[ ${current_value} != ${new_value} || $force_regen == true ]]; then
         update_required=true
-        if [[ $key == "shell" ]]; then
-            if ! shell_upgrade_details=$(get_shell_upgrade_details "$new_value"); then
-                exit 1
-            fi
-            new_json=$(echo "$new_json" | jq --arg details "$shell_upgrade_details" '. * {"shell_upgrade_details": $details}')
-        fi
-    else
-        if [[ $key == "shell" ]]; then
-            existing_upgrade_details=$(echo "$current_versions" | jq -r ".shell_upgrade_details")
-            new_json=$(echo "$new_json" | jq --arg details "$existing_upgrade_details" '. * {"shell_upgrade_details": $details}')
-        fi
+        :
     fi
 done
 
@@ -138,6 +81,7 @@ if $update_required; then
     # 记录需要更新的组件
     updated_components=""
     for key in "${!tested_versions[@]}"; do
+        [[ "$key" == "shell" ]] && continue
         current_value=$(echo "$current_versions" | jq -r ".${key}_online_version")
         new_value=${online_versions[$key]}
         if [[ ${current_value} != ${new_value} ]]; then
