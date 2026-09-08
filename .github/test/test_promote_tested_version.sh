@@ -403,10 +403,10 @@ make_nginx_build_release_filename_mismatch() {
 
 setup_temp_repo() {
   TMPDIR_TEST=$(mktemp -d)
-  cp "$REPO_DIR/tested_versions.json" "$TMPDIR_TEST/tested_versions.json" 2>/dev/null || \
-    printf '%s\n' "$FIXTURE_TESTED" > "$TMPDIR_TEST/tested_versions.json"
-  cp "$REPO_DIR/xray_shell_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>/dev/null || \
-    printf '%s\n' "$FIXTURE_VERSIONS" > "$TMPDIR_TEST/xray_shell_versions.json"
+  # Use stable fixtures rather than the live metadata, which intentionally
+  # changes as other components receive promotions.
+  printf '%s\n' "$FIXTURE_TESTED" > "$TMPDIR_TEST/tested_versions.json"
+  printf '%s\n' "$FIXTURE_VERSIONS" > "$TMPDIR_TEST/xray_shell_versions.json"
   echo "$TMPDIR_TEST"
 }
 
@@ -436,11 +436,7 @@ mock_http_html() {
 mock_http_shell_fetch_fail() {
   local url="$1"
   case "$url" in
-    */install.sh)
-      FETCH_HTTP_CODE="000"
-      return 1
-      ;;
-    */commits*)
+    */releases/tags/*)
       FETCH_HTTP_CODE="000"
       return 1
       ;;
@@ -450,6 +446,40 @@ mock_http_shell_fetch_fail() {
       return 0
       ;;
   esac
+}
+
+# Mock: stable Xray Release with all required shell assets.
+mock_http_shell_release_valid() {
+  local url="$1"
+  case "$url" in
+    */releases/tags/v2.8.3)
+      FETCH_HTTP_CODE="200"
+      printf '{"tag_name":"v2.8.3","draft":false,"prerelease":false,"assets":[{"name":"install.sh","browser_download_url":"https://example.com/xray-install.sh"},{"name":"rill-xray-agent-xray-bundle.tar.gz","browser_download_url":"https://example.com/rill-bundle.tar.gz"},{"name":"SHA256SUMS","browser_download_url":"https://example.com/xray-SHA256SUMS"}]}'
+      return 0
+      ;;
+    *)
+      FETCH_HTTP_CODE="404"
+      return 1
+      ;;
+  esac
+}
+
+mock_http_download_shell_release() {
+  local url="$1" output="$2" tmp install_sha bundle_sha
+  tmp=$(mktemp -d)
+  make_install_sh "2.8.3" > "${tmp}/install.sh"
+  printf 'rill bundle fixture\n' > "${tmp}/rill-xray-agent-xray-bundle.tar.gz"
+  install_sha=$(compute_sha256_file "${tmp}/install.sh")
+  bundle_sha=$(compute_sha256_file "${tmp}/rill-xray-agent-xray-bundle.tar.gz")
+  case "$url" in
+    *xray-SHA256SUMS) printf '%s  install.sh\n%s  rill-xray-agent-xray-bundle.tar.gz\n' "$install_sha" "$bundle_sha" > "$output" ;;
+    */xray-install.sh) cp "${tmp}/install.sh" "$output" ;;
+    */rill-bundle.tar.gz) cp "${tmp}/rill-xray-agent-xray-bundle.tar.gz" "$output" ;;
+    *) rm -rf "$tmp"; FETCH_HTTP_CODE="404"; return 1 ;;
+  esac
+  rm -rf "$tmp"
+  FETCH_HTTP_CODE="200"
+  return 0
 }
 
 # Mock: xray tag not found (404)
@@ -1071,7 +1101,7 @@ mock_http_tag_exists() {
 # Individual test cases may override http_download_file for byte-exact scenarios
 # (e.g., trailing-newline checksum tests).
 # ============================================================================
-http_download_file() {
+default_http_download_file() {
   local url="$1"
   local output="$2"
   local tmp_capture
@@ -1086,6 +1116,8 @@ http_download_file() {
   rm -f "$tmp_capture"
   return 0
 }
+
+http_download_file() { default_http_download_file "$@"; }
 
 # ============================================================================
 # Tests: Upstream verification (fail-closed)
@@ -1105,7 +1137,7 @@ EXIT_CODE=$?
 assert_rejected "T01: network failure rejects promotion" "$EXIT_CODE"
 # Verify files unchanged
 assert_eq "T01: tested_versions.json unchanged" \
-  "$(jq -S . "$REPO_DIR/tested_versions.json")" \
+  "$(printf '%s\n' "$FIXTURE_TESTED" | jq -S .)" \
   "$(jq -S . "$TMPDIR_TEST/tested_versions.json")"
 cleanup_temp_repo "$TMPDIR_TEST"
 
@@ -1150,13 +1182,13 @@ EXIT_CODE=$?
 assert_rejected "T06: tag not found (404) rejects promotion" "$EXIT_CODE"
 cleanup_temp_repo "$TMPDIR_TEST"
 
-# T06b: Any historical shell fetch failure makes verification inconclusive.
+# T06b: malformed Release response is rejected fail-closed.
 TMPDIR_TEST=$(setup_temp_repo)
 http_get() { mock_http_shell_history_fetch_fail "$@"; }
 OUTPUT=$(promote_component "shell" "2.8.3" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
 EXIT_CODE=$?
 assert_rejected "T06b: historical shell fetch failure rejects promotion" "$EXIT_CODE"
-assert_contains "T06b: error mentions failed historical fetch" "could not fetch" "$OUTPUT"
+assert_contains "T06b: error mentions invalid Release response" "not valid JSON" "$OUTPUT"
 cleanup_temp_repo "$TMPDIR_TEST"
 
 # T07: nginx_build release missing manifest → reject
@@ -1220,7 +1252,7 @@ assert_rejected "T10d: draft release rejects" "$EXIT_CODE"
 assert_contains "T10d: error mentions draft" "draft" "$OUTPUT"
 # Verify files unchanged
 assert_eq "T10d: tested_versions.json unchanged" \
-  "$(jq -S . "$REPO_DIR/tested_versions.json")" \
+  "$(printf '%s\n' "$FIXTURE_TESTED" | jq -S .)" \
   "$(jq -S . "$TMPDIR_TEST/tested_versions.json")"
 cleanup_temp_repo "$TMPDIR_TEST"
 
@@ -1234,7 +1266,7 @@ assert_rejected "T10e: prerelease release rejects" "$EXIT_CODE"
 assert_contains "T10e: error mentions prerelease" "prerelease" "$OUTPUT"
 # Verify files unchanged
 assert_eq "T10e: tested_versions.json unchanged" \
-  "$(jq -S . "$REPO_DIR/tested_versions.json")" \
+  "$(printf '%s\n' "$FIXTURE_TESTED" | jq -S .)" \
   "$(jq -S . "$TMPDIR_TEST/tested_versions.json")"
 cleanup_temp_repo "$TMPDIR_TEST"
 
@@ -1248,12 +1280,18 @@ echo "  Testing successful promotions"
 echo "=============================================="
 echo ""
 
-# T11: Shell version found in main → promote successfully
+# T11: Shell version in a stable immutable Release → promote successfully
 TMPDIR_TEST=$(setup_temp_repo)
-http_get() { mock_http_shell_in_main "$@"; }
+http_get() { mock_http_shell_release_valid "$@"; }
+http_download_file() {
+  case "$1" in
+    *xray-install.sh|*rill-bundle.tar.gz|*xray-SHA256SUMS) mock_http_download_shell_release "$@" ;;
+    *) default_http_download_file "$@" ;;
+  esac
+}
 OUTPUT=$(promote_component "shell" "2.8.3" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
 EXIT_CODE=$?
-assert_promoted "T11: shell in main promotes successfully" "$EXIT_CODE"
+assert_promoted "T11: shell Release promotes successfully" "$EXIT_CODE"
 # Verify tested_version updated
 SHELL_TESTED=$(jq -r '.shell' "$TMPDIR_TEST/tested_versions.json")
 assert_eq "T11: shell tested_versions.json updated" "2.8.3" "$SHELL_TESTED"
@@ -1261,12 +1299,18 @@ SHELL_LONG=$(jq -r '.shell_tested_version' "$TMPDIR_TEST/xray_shell_versions.jso
 assert_eq "T11: shell xray_shell_versions.json updated" "2.8.3" "$SHELL_LONG"
 cleanup_temp_repo "$TMPDIR_TEST"
 
-# T12: Shell version found in historical commit → promote successfully
+# T12: Release promotion remains idempotently valid with the same fixture
 TMPDIR_TEST=$(setup_temp_repo)
-http_get() { mock_http_shell_in_history "$@"; }
+http_get() { mock_http_shell_release_valid "$@"; }
+http_download_file() {
+  case "$1" in
+    *xray-install.sh|*rill-bundle.tar.gz|*xray-SHA256SUMS) mock_http_download_shell_release "$@" ;;
+    *) default_http_download_file "$@" ;;
+  esac
+}
 OUTPUT=$(promote_component "shell" "2.8.3" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
 EXIT_CODE=$?
-assert_promoted "T12: shell in history promotes successfully" "$EXIT_CODE"
+assert_promoted "T12: shell Release promotion succeeds" "$EXIT_CODE"
 SHELL_TESTED=$(jq -r '.shell' "$TMPDIR_TEST/tested_versions.json")
 assert_eq "T12: shell tested_versions.json updated" "2.8.3" "$SHELL_TESTED"
 cleanup_temp_repo "$TMPDIR_TEST"
