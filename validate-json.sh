@@ -63,8 +63,14 @@ shell_upgrade_details=$(jq -r '.shell_upgrade_details // empty' "${online_versio
     fail "shell_upgrade_details is missing or empty"
 
 shell_release_sha256=$(jq -r '.shell_release_sha256 // empty' "${online_version_file}")
+shell_online_version=$(jq -r '.shell_online_version // empty' "${online_version_file}")
 if [[ -n "${shell_release_sha256}" ]] && ! printf '%s' "${shell_release_sha256}" | grep -qE '^[0-9a-f]{64}$'; then
     fail "shell_release_sha256 must be 64 lowercase hex characters when present"
+fi
+if printf '%s' "${shell_online_version}" | grep -qE '^3\.[0-9]+\.[0-9]+$' &&
+    [[ "$(printf '%s\n%s\n' '3.2.3' "${shell_online_version}" | sort -V | head -n1)" == '3.2.3' ]] &&
+    [[ ! "${shell_release_sha256}" =~ ^[0-9a-f]{64}$ ]]; then
+    fail "shell_release_sha256 is required for shell Release ${shell_online_version} and newer"
 fi
 
 printf '%s\n' "JSON validation successful."
