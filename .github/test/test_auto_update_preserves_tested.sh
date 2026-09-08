@@ -5,7 +5,7 @@
 # tested metadata (tested_at / tested_note), and that network failures do not
 # pollute the JSON files.
 #
-# Covers prompt scenarios:
+# Scenarios covered:
 #   A — update online, tested unchanged (including tested_at / tested_note)
 #   B — online already latest → no meaningless write
 #   C — network/API failure → exit non-zero, JSON not polluted
@@ -329,7 +329,7 @@ echo "  Scenario D: tested drift → fail closed, no write"
 echo "=============================================="
 echo ""
 # ============================================================================
-# Prompt requirement: when xray_shell_versions.json.nginx_build_tested_version
+# Requirement: when xray_shell_versions.json.nginx_build_tested_version
 # and tested_versions.json.nginx_build disagree, auto-update must:
 #   - return non-zero;
 #   - leave both JSON files byte-identical (unchanged);

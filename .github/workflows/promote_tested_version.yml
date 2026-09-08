@@ -1,6 +1,6 @@
 name: Promote Known-Good Version
 
-# Task B/P0-F: Single-component controlled promotion of tested_version.
+# Single-component controlled promotion of tested_version.
 #
 # One component per run. The online_version is NEVER auto-copied to
 # tested_version. A human must explicitly promote a specific component

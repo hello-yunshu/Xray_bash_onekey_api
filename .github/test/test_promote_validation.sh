@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test suite for Task B: tested_version preservation and controlled promotion.
+# Test suite for tested_version preservation and controlled promotion.
 # Validates:
 #   1. tested_version fields exist and are not null/empty
 #   2. Promotion input validation (component allowlist, version format)
