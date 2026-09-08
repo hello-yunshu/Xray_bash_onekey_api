@@ -1,8 +1,8 @@
 {
-  "update_date": "2026-09-08 15:41",
-  "shell_online_version": "3.2.3",
+  "update_date": "2026-09-08 23:46",
+  "shell_online_version": "3.2.5",
   "shell_tested_version": "2.8.3",
-  "shell_upgrade_details": "release: publish Xray shell 3.2.3",
+  "shell_upgrade_details": "release: publish Xray shell 3.2.5 after exact-ref final qualification",
   "nginx_build_online_version": "2026.08.31.7443",
   "nginx_build_tested_version": "2026.07.15.6961",
   "nginx_online_version": "1.30.4",
@@ -15,5 +15,5 @@
   "openssl_tested_version": "3.6.0",
   "nginx_build_tested_at": "2026-07-30T05:57:14Z",
   "nginx_build_tested_note": "Promoted current latest published Nginx build Release v2026.07.15.6961 after manifest, SHA256SUMS, x86 and arm asset verification.",
-  "shell_release_sha256": "0ba545bfbaa4c74c360ae97198297397446189dff689ce4224d9522f2da4d784"
+  "shell_release_sha256": "b35c1278298a39fe9aa61f1d25a8842fc45bfb7d4fb861121fe508c0e10f96e0"
 }
