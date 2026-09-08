@@ -24,10 +24,9 @@ CURL_BIN="${CURL_BIN:-curl}"
 JQ_BIN="${JQ_BIN:-jq}"
 GITHUB_API_BASE="${GITHUB_API_BASE:-https://api.github.com}"
 SHELL_REPO="${SHELL_REPO:-hello-yunshu/Xray_bash_onekey}"
-SHELL_RAW_BASE="${SHELL_RAW_BASE:-https://raw.githubusercontent.com/${SHELL_REPO}}"
+SHELL_RELEASE_API_BASE="${SHELL_RELEASE_API_BASE:-https://api.github.com/repos/${SHELL_REPO}}"
 NGINX_BUILD_REPO="${NGINX_BUILD_REPO:-hello-yunshu/Xray_bash_onekey_Nginx}"
 NOTE_MAX_LENGTH="${NOTE_MAX_LENGTH:-500}"
-SHELL_HISTORY_LIMIT="${SHELL_HISTORY_LIMIT:-10}"
 
 # Global: last HTTP fetch status code ("000" = network failure)
 FETCH_HTTP_CODE=""
@@ -172,79 +171,47 @@ verify_upstream() {
   esac
 }
 
-# Verify shell version exists in main install.sh OR historical commits.
-# Fail-closed: fetch failure, HTML response, or version not found all reject.
+# Verify shell version exists in an immutable published Xray Release.
+# Fail-closed: the Release must be stable, tagged correctly, and carry the
+# install.sh, Rill bundle and SHA256SUMS assets with matching bytes.
 verify_shell_upstream() {
   local version="$1"
-
-  # 1. Fetch main branch install.sh (fail-closed on fetch failure)
-  local body
-  body=$(http_get "${SHELL_RAW_BASE}/main/install.sh") || {
-    echo "ERROR: failed to fetch install.sh from main (HTTP ${FETCH_HTTP_CODE})" >&2
+  local tag="v${version}" release_json release_tag draft prerelease assets_url sums_url install_url bundle_url
+  release_json=$(http_get "${SHELL_RELEASE_API_BASE}/releases/tags/${tag}") || {
+    echo "ERROR: failed to fetch Xray Release ${tag} (HTTP ${FETCH_HTTP_CODE})" >&2
     return 1
   }
-
-  # Check if response is HTML (not the expected shell script)
-  if printf '%s' "$body" | grep -qi '^<html\|^<!DOCTYPE'; then
-    echo "ERROR: install.sh response is HTML, not shell script" >&2
-    return 1
-  fi
-
-  # Extract shell_version from the script
-  local shell_ver
-  shell_ver=$(printf '%s\n' "$body" | grep '^shell_version=' | head -1 | awk -F'=|"' '{print $3}')
-
-  if [ "$shell_ver" = "$version" ]; then
-    echo "OK: shell_version=$version found in main install.sh" >&2
-    return 0
-  fi
-
-  # 2. Version not in main — search historical commits (fail-closed)
-  echo "INFO: version $version not in main (main has ${shell_ver:-empty}), searching history..." >&2
-
-  local commits_json
-  commits_json=$(http_get "${GITHUB_API_BASE}/repos/${SHELL_REPO}/commits?path=install.sh&per_page=${SHELL_HISTORY_LIMIT}") || {
-    echo "ERROR: failed to fetch commit history (HTTP ${FETCH_HTTP_CODE})" >&2
+  printf '%s' "$release_json" | is_valid_json || { echo "ERROR: Xray Release response is not valid JSON" >&2; return 1; }
+  release_tag=$(printf '%s' "$release_json" | "$JQ_BIN" -r '.tag_name // empty')
+  draft=$(printf '%s' "$release_json" | "$JQ_BIN" -r '.draft // false')
+  prerelease=$(printf '%s' "$release_json" | "$JQ_BIN" -r '.prerelease // false')
+  [[ "$release_tag" == "$tag" && "$draft" == false && "$prerelease" == false ]] || {
+    echo "ERROR: Xray Release ${tag} is missing, draft, prerelease, or has the wrong tag" >&2
     return 1
   }
-
-  # Validate JSON (not HTML, not empty)
-  if ! printf '%s' "$commits_json" | is_valid_json; then
-    echo "ERROR: commit history response is not valid JSON" >&2
+  install_url=$(printf '%s' "$release_json" | "$JQ_BIN" -r '.assets[]? | select(.name == "install.sh") | .browser_download_url // empty')
+  bundle_url=$(printf '%s' "$release_json" | "$JQ_BIN" -r '.assets[]? | select(.name == "rill-xray-agent-xray-bundle.tar.gz") | .browser_download_url // empty')
+  sums_url=$(printf '%s' "$release_json" | "$JQ_BIN" -r '.assets[]? | select(.name == "SHA256SUMS") | .browser_download_url // empty')
+  [[ -n "$install_url" && -n "$bundle_url" && -n "$sums_url" ]] || {
+    echo "ERROR: Xray Release ${tag} is missing required assets" >&2
     return 1
+  }
+  local tmp install_file bundle_file sums_file install_sha bundle_sha actual version_in_asset
+  tmp=$(mktemp -d) || return 1
+  install_file="$tmp/install.sh"; bundle_file="$tmp/rill-xray-agent-xray-bundle.tar.gz"; sums_file="$tmp/SHA256SUMS"
+  if ! http_download_file "$sums_url" "$sums_file" || ! http_download_file "$install_url" "$install_file" || ! http_download_file "$bundle_url" "$bundle_file"; then
+    rm -rf "$tmp"; echo "ERROR: failed to download Xray Release assets" >&2; return 1
   fi
-
-  # Extract commit SHAs
-  local shas
-  shas=$(printf '%s' "$commits_json" | "$JQ_BIN" -r '.[].sha // empty' 2>/dev/null)
-
-  if [ -z "$shas" ]; then
-    echo "ERROR: no commits found in history response" >&2
-    return 1
-  fi
-
-  # Check each commit's install.sh for matching shell_version
-  local sha
-  for sha in $shas; do
-    [ -z "$sha" ] && continue
-    local commit_body ver_at_sha
-    commit_body=$(http_get "${SHELL_RAW_BASE}/${sha}/install.sh") || {
-      echo "ERROR: could not fetch install.sh at commit $sha (HTTP ${FETCH_HTTP_CODE})" >&2
-      return 1
-    }
-    if printf '%s' "$commit_body" | grep -qi '^<html\|^<!DOCTYPE'; then
-      echo "ERROR: install.sh at commit $sha returned HTML" >&2
-      return 1
-    fi
-    ver_at_sha=$(printf '%s\n' "$commit_body" | grep '^shell_version=' | head -1 | awk -F'=|"' '{print $3}')
-    if [ "$ver_at_sha" = "$version" ]; then
-      echo "OK: shell_version=$version found at commit $sha" >&2
-      return 0
-    fi
-  done
-
-  echo "ERROR: shell_version=$version not found in main or recent ${SHELL_HISTORY_LIMIT} commits" >&2
-  return 1
+  install_sha=$(awk '$2 == "install.sh" || $2 == "*install.sh" {print $1; exit}' "$sums_file")
+  bundle_sha=$(awk '$2 == "rill-xray-agent-xray-bundle.tar.gz" || $2 == "*rill-xray-agent-xray-bundle.tar.gz" {print $1; exit}' "$sums_file")
+  actual=$(sha256sum "$install_file" | awk '{print $1}')
+  [[ "$install_sha" =~ ^[0-9a-f]{64}$ && "$actual" == "$install_sha" ]] || { rm -rf "$tmp"; echo "ERROR: install.sh SHA256 mismatch" >&2; return 1; }
+  actual=$(sha256sum "$bundle_file" | awk '{print $1}')
+  [[ "$bundle_sha" =~ ^[0-9a-f]{64}$ && "$actual" == "$bundle_sha" ]] || { rm -rf "$tmp"; echo "ERROR: Rill bundle SHA256 mismatch" >&2; return 1; }
+  version_in_asset=$(grep '^shell_version=' "$install_file" | head -1 | awk -F'=|"' '{print $3}')
+  rm -rf "$tmp"
+  [[ "$version_in_asset" == "$version" ]] || { echo "ERROR: Release install.sh shell_version=${version_in_asset:-empty} != ${version}" >&2; return 1; }
+  echo "OK: verified immutable Xray Release ${tag} (install.sh + Rill bundle + SHA256SUMS)" >&2
 }
 
 # Verify a GitHub release/tag exists. Fail-closed on any error.
