@@ -1,9 +1,9 @@
 {
-  "update_date": "2026-07-15 20:56",
-  "shell_online_version": "3.0.1",
+  "update_date": "2026-08-31 23:35",
+  "shell_online_version": "3.2.2",
   "shell_tested_version": "2.8.3",
-  "shell_upgrade_details": "fix: polish adaptive menu boxes and keep multilingual terminal layouts aligned",
-  "nginx_build_online_version": "2026.07.15.6961",
+  "shell_upgrade_details": "release: publish shell 3.2.2",
+  "nginx_build_online_version": "2026.08.31.7443",
   "nginx_build_tested_version": "2026.07.15.6961",
   "nginx_online_version": "1.30.4",
   "nginx_tested_version": "1.28.1",
@@ -11,7 +11,7 @@
   "xray_tested_version": "25.12.8",
   "jemalloc_online_version": "5.3.1",
   "jemalloc_tested_version": "5.3.0",
-  "openssl_online_version": "3.6.3",
+  "openssl_online_version": "3.6.4",
   "openssl_tested_version": "3.6.0",
   "nginx_build_tested_at": "2026-07-30T05:57:14Z",
   "nginx_build_tested_note": "Promoted current latest published Nginx build Release v2026.07.15.6961 after manifest, SHA256SUMS, x86 and arm asset verification."
