@@ -28,7 +28,6 @@ declare -A online_versions
 
 # Shell is Release-owned. This scheduled updater must not discover or publish
 # shell versions from a mutable branch; Release Xray updates the paired fields.
-online_versions["xray"]=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r .tag_name | sed 's/v//g')
 online_versions["nginx"]=$(curl -s https://api.github.com/repos/nginx/nginx/tags | jq -r .[].name | sed 's/release-//g' | grep "1\.[0-9][02468]\.*" | head -1)
 online_versions["openssl"]=$(curl -s https://api.github.com/repos/openssl/openssl/tags | jq -r .[].name | grep "3\.[0-9]\.[0-9]" | grep -v "3\.[0-9]\.[0-9]-" | awk -F '-' '{print $2}' | head -1)
 online_versions["jemalloc"]=$(curl -s https://api.github.com/repos/jemalloc/jemalloc/releases/latest | jq -r .tag_name | head -1)
@@ -57,7 +56,7 @@ new_json=$(echo "$new_json" | jq --arg date "$(date '+%Y-%m-%d %H:%M')" '. * {"u
 
 # 检查每个组件的版本
 for key in "${!tested_versions[@]}"; do
-    [[ "$key" == "shell" ]] && continue
+    [[ "$key" == "shell" || "$key" == "xray" ]] && continue
     current_value=$(echo "$current_versions" | jq -r ".${key}_online_version")
     new_value=${online_versions[$key]}
 
@@ -81,7 +80,7 @@ if $update_required; then
     # 记录需要更新的组件
     updated_components=""
     for key in "${!tested_versions[@]}"; do
-        [[ "$key" == "shell" ]] && continue
+        [[ "$key" == "shell" || "$key" == "xray" ]] && continue
         current_value=$(echo "$current_versions" | jq -r ".${key}_online_version")
         new_value=${online_versions[$key]}
         if [[ ${current_value} != ${new_value} ]]; then
