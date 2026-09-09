@@ -25,12 +25,16 @@ jobs:
           set -euo pipefail
           bash -n validate-json.sh
           bash -n .github/scripts/promote_tested_version.sh
+          bash -n .github/scripts/discover_upstream_candidates.sh
+          bash -n .github/scripts/promote_verified_candidate.sh
           bash -n .github/test/test_promote_tested_version.sh
           bash -n .github/test/test_promote_validation.sh
           bash -n .github/test/test_auto_update_preserves_tested.sh
           shellcheck -S error \
             validate-json.sh \
             .github/scripts/promote_tested_version.sh \
+            .github/scripts/discover_upstream_candidates.sh \
+            .github/scripts/promote_verified_candidate.sh \
             .github/test/test_promote_tested_version.sh \
             .github/test/test_promote_validation.sh \
             .github/test/test_auto_update_preserves_tested.sh
@@ -46,3 +50,4 @@ jobs:
           # On CI (ubuntu-latest, bash 5+) this runs for real. On macOS bash 3.2
           # it SKIPs (exit 77) because update-version.sh uses declare -A.
           bash .github/test/test_auto_update_preserves_tested.sh
+          bash .github/test/test_promotion_fail_closed.sh
