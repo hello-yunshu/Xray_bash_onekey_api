@@ -93,8 +93,10 @@ hash_stdin() {
 # Fixtures
 # ----------------------------------------------------------------------------
 
-# Scenario A/B initial state: online fields are OLDER than the mock "latest"
-# values, so A triggers an update. tested fields + tested_at/note must survive.
+# Scenario A/B initial state: generic component online fields are OLDER than
+# the mock "latest" values, so A triggers an update. Xray is deliberately
+# absent from this generic updater: it is changed only by verified promotion.
+# tested fields + tested_at/note must survive.
 INIT_TESTED='{
   "shell": "2.8.3",
   "xray": "25.12.8",
@@ -117,15 +119,18 @@ INIT_VERSIONS='{
   "nginx_tested_version": "1.28.1",
   "xray_online_version": "26.3.26",
   "xray_tested_version": "25.12.8",
+  "xray_installer_ref": "e741a4f56d368afbb9e5be3361b40c4552d3710d",
+  "xray_installer_sha256": "7f70c95f6b418da8b4f4883343d602964915e28748993870fd554383afdbe555",
   "jemalloc_online_version": "5.3.0",
   "jemalloc_tested_version": "5.3.0",
   "openssl_online_version": "3.6.2",
   "openssl_tested_version": "3.6.0"
 }'
 
-# Mock curl: returns fixture data per URL. Non-shell "latest" values are NEWER
-# than INIT_VERSIONS online fields. shell install.sh is kept EQUAL to the
-# fixture so get_shell_upgrade_details (commit-history walk) is not invoked.
+# Mock curl: returns fixture data per URL. Generic "latest" values are NEWER
+# than INIT_VERSIONS online fields. Xray latest is not consumed by
+# update-version.sh; the branch is retained only as a fixture compatibility
+# guard. shell install.sh is kept EQUAL to the fixture.
 make_mock_curl() {
   cat > "$1" <<'MOCK'
 #!/usr/bin/env bash
@@ -209,8 +214,8 @@ if [ "$A_RC" -eq 0 ]; then pass "A: update-version.sh exited 0"; else fail "A: u
 # Online fields updated to mock "latest" values.
 assert_eq "A: shell_online unchanged (already latest)" \
   "3.0.1" "$(jq -r '.shell_online_version' "$TMP_A/xray_shell_versions.json")"
-assert_eq "A: xray_online updated" \
-  "26.3.27" "$(jq -r '.xray_online_version' "$TMP_A/xray_shell_versions.json")"
+assert_eq "A: xray_online unchanged (verified promotion owns it)" \
+  "26.3.26" "$(jq -r '.xray_online_version' "$TMP_A/xray_shell_versions.json")"
 assert_eq "A: nginx_online updated" \
   "1.30.4" "$(jq -r '.nginx_online_version' "$TMP_A/xray_shell_versions.json")"
 assert_eq "A: openssl_online updated" \
@@ -260,7 +265,7 @@ echo ""
 # Build a fixture whose online fields already equal the mock "latest" values.
 B_VERSIONS=$(printf '%s\n' "$INIT_VERSIONS" | jq '
   .shell_online_version="3.0.1"
-  | .xray_online_version="26.3.27"
+  | .xray_online_version="26.3.26"
   | .nginx_online_version="1.30.4"
   | .openssl_online_version="3.6.3"
   | .jemalloc_online_version="5.3.1"
