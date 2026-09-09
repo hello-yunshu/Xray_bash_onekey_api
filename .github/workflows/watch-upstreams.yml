@@ -32,11 +32,20 @@ jobs:
       - id: discover
         run: bash .github/scripts/discover_upstream_candidates.sh
 
-  qualify-xray:
+  qualify-xray-fresh:
     needs: discover
-    if: needs.discover.outputs.xray_changed == '1'
+    if: needs.discover.outputs.xray_changed == '1' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        mode:
+          - xtls_only
+          - ws_grpc_xhttp
+          - reality
+          - reality_nginx
+          - tls
     steps:
       - uses: actions/checkout@v5
         with:
@@ -46,20 +55,30 @@ jobs:
           persist-credentials: false
       - name: Record exact qualification inputs
         run: |
-          printf 'MAIN_REPO_SHA=%s\nXRAY_CANDIDATE=%s\nINSTALLER_REF=%s\n' \
+          printf 'MAIN_REPO_SHA=%s\nXRAY_CANDIDATE=%s\nINSTALLER_REF=%s\nMODE=%s\n' \
             '${{ needs.discover.outputs.main_sha }}' \
             '${{ needs.discover.outputs.candidate_version }}' \
-            '${{ needs.discover.outputs.current_installer_ref }}'
-      - name: Five-mode fresh install qualification
+            '${{ needs.discover.outputs.current_installer_ref }}' \
+            '${{ matrix.mode }}'
+      - name: Isolated fresh install qualification
         env:
           XRAY_CANDIDATE_VERSION: ${{ needs.discover.outputs.candidate_version }}
           XRAY_CANDIDATE_INSTALLER_REF: ${{ needs.discover.outputs.current_installer_ref }}
           XRAY_CANDIDATE_INSTALLER_SHA256: ${{ needs.discover.outputs.current_installer_sha }}
-        run: |
-          set -euo pipefail
-          for mode in xtls_only ws_grpc_xhttp reality reality_nginx tls; do
-            sudo -E bash .github/test/test_install.sh "$mode"
-          done
+        run: sudo -E bash .github/test/test_install.sh '${{ matrix.mode }}'
+
+  qualify-xray-upgrade:
+    needs: discover
+    if: needs.discover.outputs.xray_changed == '1' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: hello-yunshu/Xray_bash_onekey
+          ref: ${{ needs.discover.outputs.main_sha }}
+          fetch-depth: 1
+          persist-credentials: false
       - name: Existing transaction rollback regression
         run: bash .github/test/test_xray_update_transaction.sh
       - name: Representative real upgrade qualification
@@ -72,9 +91,16 @@ jobs:
 
   qualify-installer:
     needs: discover
-    if: needs.discover.outputs.installer_changed == '1'
+    if: needs.discover.outputs.installer_changed == '1' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - fresh
+          - reinstall
+          - remove
     steps:
       - uses: actions/checkout@v5
         with:
@@ -82,19 +108,21 @@ jobs:
           ref: ${{ needs.discover.outputs.main_sha }}
           fetch-depth: 1
           persist-credentials: false
-      - name: Installer contract and representative real install
+      - name: Real installer CLI qualification
         env:
+          XRAY_TARGET_VERSION: ${{ needs.discover.outputs.candidate_version }}
           XRAY_CANDIDATE_INSTALLER_REF: ${{ needs.discover.outputs.installer_candidate_ref }}
           XRAY_CANDIDATE_INSTALLER_SHA256: ${{ needs.discover.outputs.installer_candidate_sha }}
-        run: |
-          set -euo pipefail
-          bash -n install.sh
-          sudo -E bash .github/test/test_install.sh reality
-          bash .github/test/test_xray_update_transaction.sh
+          XRAY_CURRENT_INSTALLER_REF: ${{ needs.discover.outputs.current_installer_ref }}
+          XRAY_CURRENT_INSTALLER_SHA256: ${{ needs.discover.outputs.current_installer_sha }}
+        run: sudo -E bash .github/test/test_installer_candidate_smoke.sh '${{ matrix.scenario }}'
 
   promote-xray:
-    needs: [discover, qualify-xray]
-    if: needs.discover.outputs.xray_changed == '1' && needs.qualify-xray.result == 'success'
+    needs: [discover, qualify-xray-fresh, qualify-xray-upgrade]
+    if: >-
+      needs.discover.outputs.xray_changed == '1' &&
+      needs.qualify-xray-fresh.result == 'success' &&
+      needs.qualify-xray-upgrade.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -115,12 +143,13 @@ jobs:
           git push origin HEAD:main
 
   promote-installer:
-    needs: [discover, qualify-xray, qualify-installer, promote-xray]
+    needs: [discover, qualify-xray-fresh, qualify-xray-upgrade, qualify-installer, promote-xray]
     if: >-
       always() && needs.discover.outputs.installer_changed == '1' &&
       needs.qualify-installer.result == 'success' &&
       (needs.discover.outputs.xray_changed != '1' ||
-       needs.qualify-xray.result != 'success' ||
+       needs.qualify-xray-fresh.result != 'success' ||
+       needs.qualify-xray-upgrade.result != 'success' ||
        needs.promote-xray.result == 'success' ||
        needs.promote-xray.result == 'failure')
     runs-on: ubuntu-latest
