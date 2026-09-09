@@ -67,6 +67,25 @@ shell_online_version=$(jq -r '.shell_online_version // empty' "${online_version_
 if [[ -n "${shell_release_sha256}" ]] && ! printf '%s' "${shell_release_sha256}" | grep -qE '^[0-9a-f]{64}$'; then
     fail "shell_release_sha256 must be 64 lowercase hex characters when present"
 fi
+
+xray_installer_ref=$(jq -r '.xray_installer_ref // empty' "${online_version_file}")
+xray_installer_sha256=$(jq -r '.xray_installer_sha256 // empty' "${online_version_file}")
+[[ "${xray_installer_ref}" =~ ^[0-9a-f]{40}$ ]] ||
+    fail "xray_installer_ref must be exactly 40 lowercase hex characters"
+[[ "${xray_installer_sha256}" =~ ^[0-9a-f]{64}$ ]] ||
+    fail "xray_installer_sha256 must be exactly 64 lowercase hex characters"
+xray_installer_verified_at=$(jq -r '.xray_installer_verified_at // empty' "${online_version_file}")
+if [[ -n "${xray_installer_verified_at}" ]]; then
+    printf '%s' "${xray_installer_verified_at}" |
+        grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' ||
+        fail "xray_installer_verified_at must be an ISO-8601 UTC timestamp"
+fi
+xray_verified_at=$(jq -r '.xray_verified_at // empty' "${online_version_file}")
+if [[ -n "${xray_verified_at}" ]]; then
+    printf '%s' "${xray_verified_at}" |
+        grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$' ||
+        fail "xray_verified_at must be an ISO-8601 UTC timestamp"
+fi
 if printf '%s' "${shell_online_version}" | grep -qE '^3\.[0-9]+\.[0-9]+$' &&
     [[ "$(printf '%s\n%s\n' '3.2.3' "${shell_online_version}" | sort -V | head -n1)" == '3.2.3' ]] &&
     [[ ! "${shell_release_sha256}" =~ ^[0-9a-f]{64}$ ]]; then
