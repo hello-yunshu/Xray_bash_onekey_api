@@ -30,6 +30,7 @@ jobs:
           bash -n .github/test/test_promote_tested_version.sh
           bash -n .github/test/test_promote_validation.sh
           bash -n .github/test/test_auto_update_preserves_tested.sh
+          bash -n .github/test/test_watch_upstreams_contract.sh
           shellcheck -S error \
             validate-json.sh \
             .github/scripts/promote_tested_version.sh \
@@ -37,7 +38,8 @@ jobs:
             .github/scripts/promote_verified_candidate.sh \
             .github/test/test_promote_tested_version.sh \
             .github/test/test_promote_validation.sh \
-            .github/test/test_auto_update_preserves_tested.sh
+            .github/test/test_auto_update_preserves_tested.sh \
+            .github/test/test_watch_upstreams_contract.sh
 
       - name: Run API contract tests
         run: |
@@ -51,3 +53,4 @@ jobs:
           # it SKIPs (exit 77) because update-version.sh uses declare -A.
           bash .github/test/test_auto_update_preserves_tested.sh
           bash .github/test/test_promotion_fail_closed.sh
+          bash .github/test/test_watch_upstreams_contract.sh
