@@ -1,8 +1,8 @@
 {
-  "update_date": "2026-09-09 21:26",
-  "shell_online_version": "3.2.7",
+  "update_date": "2026-09-10 11:30",
+  "shell_online_version": "3.2.8",
   "shell_tested_version": "2.8.3",
-  "shell_upgrade_details": "v3.2.7: publish canonical Rill bundle with exact main provenance",
+  "shell_upgrade_details": "release: publish Xray shell 3.2.8 for Issue #102 closure",
   "nginx_build_online_version": "2026.08.31.7443",
   "nginx_build_tested_version": "2026.07.15.6961",
   "nginx_online_version": "1.30.4",
@@ -18,5 +18,5 @@
   "openssl_tested_version": "3.6.0",
   "nginx_build_tested_at": "2026-07-30T05:57:14Z",
   "nginx_build_tested_note": "Promoted current latest published Nginx build Release v2026.07.15.6961 after manifest, SHA256SUMS, x86 and arm asset verification.",
-  "shell_release_sha256": "7d4575e9c01138941e98e7f00181da4288591392ccdcd7d6ace81dfc376b5ed7"
+  "shell_release_sha256": "5ee0330c8eebb4203b3c416988f64f680452b8bc9804fdc57cad26dbe1ffb1cf"
 }
