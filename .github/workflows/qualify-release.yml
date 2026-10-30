@@ -260,17 +260,23 @@ jobs:
             '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha,testedVersion:$tested,allowRollback:$rollback}' > "$RUNNER_TEMP/candidate.json"
           jq -n --arg v "$BASE_VERSION" --arg ref "$BASE_REF" --arg sha "$BASE_SHA" --arg tested "$TESTED_VERSION" \
             '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha,testedVersion:$tested}' > "$RUNNER_TEMP/base.json"
-          downloaded=false
-          for attempt in 1 2 3; do
-            rm -rf "$RUNNER_TEMP/binaries"
-            if gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
-              --pattern "qualification-binary-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-*" --dir "$RUNNER_TEMP/binaries"; then
-              downloaded=true
-              break
-            fi
-            [[ "$attempt" == 3 ]] || sleep "$((attempt * 5))"
-          done
-          [[ "$downloaded" == true ]] || { echo 'Qualification binary evidence download failed' >&2; exit 1; }
+          while IFS= read -r version; do
+            [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            for scenario in fresh direct shell-first reinstall failure-recovery restart-recovery fallback; do
+              name="qualification-binary-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$version-$scenario"
+              downloaded=false
+              for attempt in 1 2 3; do
+                rm -rf "$RUNNER_TEMP/binaries/$name"
+                if gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+                  --name "$name" --dir "$RUNNER_TEMP/binaries/$name"; then
+                  downloaded=true
+                  break
+                fi
+                [[ "$attempt" == 3 ]] || sleep "$((attempt * 5))"
+              done
+              [[ "$downloaded" == true ]] || { echo "Qualification binary evidence download failed: $version $scenario" >&2; exit 1; }
+            done
+          done < <(jq -er '.baselines[].version' compatibility-baselines.json)
           collected=false
           for attempt in 1 2 3; do
             rm -f evidence/compatibility.json
