@@ -261,8 +261,17 @@ jobs:
             '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha,testedVersion:$tested,allowRollback:$rollback}' > "$RUNNER_TEMP/candidate.json"
           jq -n --arg v "$BASE_VERSION" --arg ref "$BASE_REF" --arg sha "$BASE_SHA" --arg tested "$TESTED_VERSION" \
             '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha,testedVersion:$tested}' > "$RUNNER_TEMP/base.json"
-          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
-            --pattern "qualification-binary-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-*" --dir "$RUNNER_TEMP/binaries"
+          downloaded=false
+          for attempt in 1 2 3; do
+            rm -rf "$RUNNER_TEMP/binaries"
+            if gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+              --pattern "qualification-binary-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-*" --dir "$RUNNER_TEMP/binaries"; then
+              downloaded=true
+              break
+            fi
+            [[ "$attempt" == 3 ]] || sleep "$((attempt * 5))"
+          done
+          [[ "$downloaded" == true ]] || { echo 'Qualification binary evidence download failed' >&2; exit 1; }
           python3 .github/scripts/collect_qualification_evidence.py \
             --baselines compatibility-baselines.json --jobs "$RUNNER_TEMP/jobs.json" \
             --candidate "$RUNNER_TEMP/candidate.json" --base "$RUNNER_TEMP/base.json" --binaries "$RUNNER_TEMP/binaries" --output evidence/compatibility.json \
