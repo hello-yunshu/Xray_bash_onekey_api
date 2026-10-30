@@ -10,7 +10,7 @@ candidate_ref=${XRAY_CANDIDATE_INSTALLER_REF:?}
 candidate_sha=${XRAY_CANDIDATE_INSTALLER_SHA256:?}
 expected_sha=${LEGACY_INSTALL_SHA256:?}
 scenario=${UPGRADE_SCENARIO:-direct}
-[[ $scenario == fresh || $scenario == direct || $scenario == shell-first || $scenario == reinstall || $scenario == failure-recovery || $scenario == fallback ]]
+[[ $scenario == fresh || $scenario == direct || $scenario == shell-first || $scenario == reinstall || $scenario == failure-recovery || $scenario == restart-recovery || $scenario == fallback ]]
 [[ $base =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && $candidate =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
 [[ $base_ref =~ ^[0-9a-f]{40}$ && $candidate_ref =~ ^[0-9a-f]{40}$ ]]
 [[ $base_sha =~ ^[0-9a-f]{64}$ && $candidate_sha =~ ^[0-9a-f]{64}$ && $expected_sha =~ ^[0-9a-f]{64}$ ]]
@@ -92,6 +92,33 @@ if [[ $scenario == failure-recovery ]]; then
     systemctl is-active --quiet xray || { echo 'Original service was not restored after rejection' >&2; diagnose; exit 1; }
     record_binary
     echo "Legacy failure recovery passed: retained Xray $base and original config"
+    exit 0
+fi
+if [[ $scenario == restart-recovery ]]; then
+    # A real systemd pre-start hook fails exactly once, then allows rollback to
+    # start the previous binary. No historical shell functions are patched.
+    original_binary=$(sha256sum /usr/local/bin/xray | awk '{print $1}')
+    marker=$(mktemp /tmp/xray-restart-failure.XXXXXX)
+    chmod 666 "$marker"
+    mkdir -p /etc/systemd/system/xray.service.d
+    cat > /etc/systemd/system/xray.service.d/qualification-fail-once.conf <<EOF
+[Service]
+Restart=no
+ExecStartPre=/bin/sh -c 'if [ ! -s $marker ]; then echo failed > $marker; exit 1; fi'
+EOF
+    systemctl daemon-reload
+    if XRAY_CANDIDATE_VERSION="$candidate" XRAY_CANDIDATE_INSTALLER_REF="$candidate_ref" \
+        XRAY_CANDIDATE_INSTALLER_SHA256="$candidate_sha" \
+        bash /etc/idleleo/install.sh --xray-update auto_update >"$log" 2>&1; then
+        echo 'Failed service start unexpectedly reported success' >&2
+        exit 1
+    fi
+    [[ -s $marker ]] || { echo 'Failure injection was not exercised' >&2; exit 1; }
+    [[ $(sha256sum /usr/local/bin/xray | awk '{print $1}') == "$original_binary" ]] || { echo 'Original binary was not restored' >&2; exit 1; }
+    [[ $(sha256sum /etc/idleleo/conf/xray/config.json | awk '{print $1}') == "$config_sha" ]]
+    systemctl is-active --quiet xray || { echo 'Original service was not restored after failed start' >&2; diagnose; exit 1; }
+    record_binary
+    echo "Legacy failed-start recovery passed: restored Xray $base and original config"
     exit 0
 fi
 if [[ $scenario == fallback ]]; then

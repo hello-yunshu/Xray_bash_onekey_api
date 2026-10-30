@@ -7,7 +7,7 @@ from pathlib import Path
 
 SCENARIOS = {'fresh': 'fresh', 'legacy-upgrade': 'direct',
              'shell-then-upgrade': 'shell-first', 'reinstall': 'reinstall',
-             'failure-recovery': 'failure-recovery', 'fallback': 'fallback'}
+             'failure-recovery': 'failure-recovery', 'restart-recovery': 'restart-recovery', 'fallback': 'fallback'}
 MODES = ('xtls_only', 'ws_grpc_xhttp', 'reality', 'reality_nginx', 'tls')
 INSTALLER_SCENARIOS = ('fresh', 'reinstall', 'remove')
 BOOTSTRAP_IMAGES = ('debian:12-slim', 'debian:13-slim', 'ubuntu:24.04', 'ubuntu:26.04', 'quay.io/centos/centos:stream10')
@@ -50,7 +50,7 @@ def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt):
             fact_key = f'{version}-{scenario}'
             fact = facts.get(fact_key, {})
             expected_version = (base.get('testedVersion') if key == 'fallback' else
-                                initial['xrayVersion'] if key == 'failure-recovery' else candidate['xrayVersion'])
+                                initial['xrayVersion'] if key in ('failure-recovery', 'restart-recovery') else candidate['xrayVersion'])
             if (fact.get('version') != expected_version or
                     not re.fullmatch(r'[0-9a-f]{64}', str(fact.get('sha256', ''))) or
                     fact.get('arch') not in ('x86_64', 'aarch64')):

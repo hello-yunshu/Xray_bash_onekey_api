@@ -32,7 +32,7 @@ class CollectionTests(unittest.TestCase):
 
     def test_records_exact_jobs_and_fallback_scope(self):
         result = self.collect()
-        self.assertEqual(len(result['baselines'][0]['scenarios']), 6)
+        self.assertEqual(len(result['baselines'][0]['scenarios']), 7)
         self.assertEqual(result['baselines'][0]['scenarios']['fallback']['environment']['coverage'], 'direct-fallback-function')
         self.assertEqual(result['baselines'][0]['scenarios']['legacy-upgrade']['environment']['coverage'], 'same-version-reinstall')
 
@@ -67,6 +67,8 @@ class CollectionTests(unittest.TestCase):
         self.baselines['baselines'][0]['initial'] = initial
         self.facts['3.2.9-failure-recovery']['version'] = '25.12.8'
         self.facts['3.2.9-failure-recovery']['sha256'] = 'f' * 64
+        self.facts['3.2.9-restart-recovery']['version'] = '25.12.8'
+        self.facts['3.2.9-restart-recovery']['sha256'] = 'f' * 64
         result = self.collect()['baselines'][0]
         self.assertEqual(result['initial'], initial)
         self.assertEqual(result['scenarios']['legacy-upgrade']['environment']['coverage'], 'production-entry')

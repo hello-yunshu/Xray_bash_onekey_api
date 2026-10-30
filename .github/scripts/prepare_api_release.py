@@ -30,7 +30,7 @@ def prepare(metadata, evidence, baselines):
     expected = {b['version']: (b['commit'], b['installSha256']) for b in baselines['baselines']}
     if len(expected) != len(baselines['baselines']) or not expected:
         raise ValueError('invalid baseline list')
-    required = {'fresh', 'legacy-upgrade', 'shell-then-upgrade', 'reinstall', 'failure-recovery', 'fallback'}
+    required = {'fresh', 'legacy-upgrade', 'shell-then-upgrade', 'reinstall', 'failure-recovery', 'restart-recovery', 'fallback'}
     entries = evidence.get('baselines')
     if not isinstance(entries, list) or len(entries) != len(expected):
         raise ValueError('missing baseline results')

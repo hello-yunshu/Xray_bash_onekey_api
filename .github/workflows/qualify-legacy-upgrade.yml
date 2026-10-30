@@ -79,7 +79,7 @@ jobs:
       fail-fast: false
       matrix:
         baseline: ${{ fromJSON(needs.baselines.outputs.matrix) }}
-        scenario: [fresh, direct, shell-first, reinstall, failure-recovery, fallback]
+        scenario: [fresh, direct, shell-first, reinstall, failure-recovery, restart-recovery, fallback]
     name: Legacy upgrade (${{ matrix.baseline.version }}, ${{ matrix.scenario }})
     steps:
       - uses: actions/checkout@v5
@@ -121,6 +121,12 @@ jobs:
             XRAY_CANDIDATE_VERSION=${XRAY_CANDIDATE_VERSION:-26.10.29}
             XRAY_CANDIDATE_INSTALLER_REF=${XRAY_CANDIDATE_INSTALLER_REF:-e42df6a772e60dd7b058f852262c4dbeb0bc231d}
             XRAY_CANDIDATE_INSTALLER_SHA256=${XRAY_CANDIDATE_INSTALLER_SHA256:-954666bb028ba8561b2218372b7db76ba051f8252b2db9195321e672263aab94}
+            # Isolate restart recovery from the known incompatible installer.
+            if [[ "$UPGRADE_SCENARIO" == restart-recovery ]]; then
+              XRAY_CANDIDATE_VERSION="$BASE_XRAY_VERSION"
+              XRAY_CANDIDATE_INSTALLER_REF="$BASE_INSTALLER_REF"
+              XRAY_CANDIDATE_INSTALLER_SHA256="$BASE_INSTALLER_SHA256"
+            fi
           fi
           export XRAY_CANDIDATE_VERSION="${XRAY_CANDIDATE_VERSION:-$(jq -r .xray_online_version "$XRAY_VERSIONS_FILE")}"
           export XRAY_CANDIDATE_INSTALLER_REF="${XRAY_CANDIDATE_INSTALLER_REF:-$(jq -r .xray_installer_ref "$XRAY_VERSIONS_FILE")}"

@@ -22,7 +22,7 @@ class PrepareReleaseTests(unittest.TestCase):
                          'installerRef': 'a' * 40, 'installerSha256': 'b' * 64},
                          'baselines': [{'version': '3.2.9', 'commit': 'c' * 40,
                          'installSha256': 'd' * 64, 'scenarios': {key: copy.deepcopy(result) for key in
-                         ('fresh', 'legacy-upgrade', 'shell-then-upgrade', 'reinstall', 'failure-recovery', 'fallback')}}]}
+                         ('fresh', 'legacy-upgrade', 'shell-then-upgrade', 'reinstall', 'failure-recovery', 'restart-recovery', 'fallback')}}]}
 
     def prepare(self):
         return module.prepare(self.metadata, self.evidence, self.baselines)
