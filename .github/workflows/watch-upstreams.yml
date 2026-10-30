@@ -6,7 +6,7 @@ on:
     - cron: '0 2 * * *'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: verify-promote-upstreams
@@ -32,142 +32,30 @@ jobs:
       - id: discover
         run: bash .github/scripts/discover_upstream_candidates.sh
 
-  qualify-xray-fresh:
+  dispatch-qualification:
     needs: discover
-    if: needs.discover.outputs.xray_changed == '1' || github.event_name == 'workflow_dispatch'
+    if: needs.discover.outputs.xray_changed == '1' || needs.discover.outputs.installer_changed == '1' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        mode:
-          - xtls_only
-          - ws_grpc_xhttp
-          - reality
-          - reality_nginx
-          - tls
+    permissions:
+      contents: read
+      actions: write
     steps:
-      - uses: actions/checkout@v5
-        with:
-          repository: hello-yunshu/Xray_bash_onekey
-          ref: ${{ needs.discover.outputs.main_sha }}
-          fetch-depth: 1
-          persist-credentials: false
-      - name: Record exact qualification inputs
-        run: |
-          printf 'MAIN_REPO_SHA=%s\nXRAY_CANDIDATE=%s\nINSTALLER_REF=%s\nMODE=%s\n' \
-            '${{ needs.discover.outputs.main_sha }}' \
-            '${{ needs.discover.outputs.candidate_version }}' \
-            '${{ needs.discover.outputs.current_installer_ref }}' \
-            '${{ matrix.mode }}'
-      - name: Isolated fresh install qualification
+      - name: Start read-only qualification of the final candidate tuple
         env:
-          XRAY_CANDIDATE_VERSION: ${{ needs.discover.outputs.candidate_version }}
-          XRAY_CANDIDATE_INSTALLER_REF: ${{ needs.discover.outputs.current_installer_ref }}
-          XRAY_CANDIDATE_INSTALLER_SHA256: ${{ needs.discover.outputs.current_installer_sha }}
-        run: sudo -E bash .github/test/test_install.sh '${{ matrix.mode }}'
-
-  qualify-xray-upgrade:
-    needs: discover
-    if: needs.discover.outputs.xray_changed == '1' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          repository: hello-yunshu/Xray_bash_onekey
-          ref: ${{ needs.discover.outputs.main_sha }}
-          fetch-depth: 1
-          persist-credentials: false
-      - name: Existing transaction rollback regression
-        run: bash .github/test/test_xray_update_transaction.sh
-      - name: Representative real upgrade qualification
-        env:
-          BASE_XRAY_VERSION: ${{ needs.discover.outputs.current_xray_version }}
-          XRAY_CANDIDATE_VERSION: ${{ needs.discover.outputs.candidate_version }}
-          XRAY_CANDIDATE_INSTALLER_REF: ${{ needs.discover.outputs.current_installer_ref }}
-          XRAY_CANDIDATE_INSTALLER_SHA256: ${{ needs.discover.outputs.current_installer_sha }}
-        run: sudo -E bash .github/test/test_candidate_real_upgrade.sh
-
-  qualify-installer:
-    needs: discover
-    if: needs.discover.outputs.installer_changed == '1' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        scenario:
-          - fresh
-          - reinstall
-          - remove
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          repository: hello-yunshu/Xray_bash_onekey
-          ref: ${{ needs.discover.outputs.main_sha }}
-          fetch-depth: 1
-          persist-credentials: false
-      - name: Real installer CLI qualification
-        env:
-          XRAY_TARGET_VERSION: ${{ needs.discover.outputs.candidate_version }}
-          XRAY_CANDIDATE_INSTALLER_REF: ${{ needs.discover.outputs.installer_candidate_ref }}
-          XRAY_CANDIDATE_INSTALLER_SHA256: ${{ needs.discover.outputs.installer_candidate_sha }}
-          XRAY_CURRENT_INSTALLER_REF: ${{ needs.discover.outputs.current_installer_ref }}
-          XRAY_CURRENT_INSTALLER_SHA256: ${{ needs.discover.outputs.current_installer_sha }}
-        run: sudo -E bash .github/test/test_installer_candidate_smoke.sh '${{ matrix.scenario }}'
-
-  promote-xray:
-    needs: [discover, qualify-xray-fresh, qualify-xray-upgrade]
-    if: >-
-      needs.discover.outputs.xray_changed == '1' &&
-      needs.qualify-xray-fresh.result == 'success' &&
-      needs.qualify-xray-upgrade.result == 'success'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Promote only the verified Xray candidate
-        env:
-          CANDIDATE_GATE: PASS
-          MAIN_REPO_SHA: ${{ needs.discover.outputs.main_sha }}
-          EXPECTED_MAIN_SHA: ${{ needs.discover.outputs.main_sha }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BASE_VERSION: ${{ needs.discover.outputs.current_xray_version }}
+          BASE_REF: ${{ needs.discover.outputs.current_installer_ref }}
+          BASE_SHA: ${{ needs.discover.outputs.current_installer_sha }}
+          CANDIDATE_VERSION: ${{ needs.discover.outputs.candidate_version }}
+          CANDIDATE_REF: ${{ needs.discover.outputs.installer_candidate_ref }}
+          CANDIDATE_SHA: ${{ needs.discover.outputs.installer_candidate_sha }}
         run: |
-          bash .github/scripts/promote_verified_candidate.sh \
-            xray '${{ needs.discover.outputs.candidate_version }}'
-      - name: Commit atomic Xray promotion
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add xray_shell_versions.json
-          git commit -m "promote(xray): ${{ needs.discover.outputs.candidate_version }}"
-          git push origin HEAD:main
-
-  promote-installer:
-    needs: [discover, qualify-xray-fresh, qualify-xray-upgrade, qualify-installer, promote-xray]
-    if: >-
-      always() && needs.discover.outputs.installer_changed == '1' &&
-      needs.qualify-installer.result == 'success' &&
-      (needs.discover.outputs.xray_changed != '1' ||
-       needs.qualify-xray-fresh.result != 'success' ||
-       needs.qualify-xray-upgrade.result != 'success' ||
-       needs.promote-xray.result == 'success' ||
-       needs.promote-xray.result == 'failure')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Promote only the verified installer candidate
-        env:
-          CANDIDATE_GATE: PASS
-          MAIN_REPO_SHA: ${{ needs.discover.outputs.main_sha }}
-          EXPECTED_MAIN_SHA: ${{ needs.discover.outputs.main_sha }}
-          INSTALLER_SHA256: ${{ needs.discover.outputs.installer_candidate_sha }}
-        run: |
-          bash .github/scripts/promote_verified_candidate.sh \
-            installer '${{ needs.discover.outputs.installer_candidate_ref }}'
-      - name: Commit atomic installer promotion
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add xray_shell_versions.json
-          git commit -m "promote(xray-install): ${{ needs.discover.outputs.installer_candidate_ref }}"
-          git push origin HEAD:main
+          set -euo pipefail
+          gh workflow run qualify-release.yml --ref main \
+            -f base_version="$BASE_VERSION" \
+            -f base_installer_ref="$BASE_REF" \
+            -f base_installer_sha256="$BASE_SHA" \
+            -f candidate_version="$CANDIDATE_VERSION" \
+            -f candidate_installer_ref="$CANDIDATE_REF" \
+            -f candidate_installer_sha256="$CANDIDATE_SHA"

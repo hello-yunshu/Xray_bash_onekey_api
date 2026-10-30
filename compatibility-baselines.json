@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "repository": "hello-yunshu/Xray_bash_onekey",
+  "baselines": [
+    {
+      "version": "3.2.9",
+      "tag": "v3.2.9",
+      "commit": "81144f022977b8bba800b96a5afbbd1a2117238d",
+      "installSha256": "1e6684691d864d5504c6084e8d0261a1bc9efb9acefd385ace44f18a83f4d5a2",
+      "initial": {
+        "xrayVersion": "26.3.27",
+        "installerRef": "e741a4f56d368afbb9e5be3361b40c4552d3710d",
+        "installerSha256": "7f70c95f6b418da8b4f4883343d602964915e28748993870fd554383afdbe555"
+      }
+    },
+    {
+      "version": "3.2.10",
+      "tag": "v3.2.10",
+      "commit": "3e04a44685aeacb8a55a2f69023a66eaef84b9b9",
+      "installSha256": "9323a226e0241f2e3d9229f607b6a9ef68e59697634d8ce0e6a8f4d1001c2e60"
+    },
+    {
+      "version": "3.2.11",
+      "tag": "v3.2.11",
+      "commit": "6c7aff36c22c5b4f06d9f681f19cc3ab20f707ba",
+      "installSha256": "fb14ae7d45a18d7fdd070830b539e55512af8b60433aaa74cf005ed1de0a601d"
+    }
+  ]
+}

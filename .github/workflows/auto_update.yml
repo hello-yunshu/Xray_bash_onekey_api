@@ -15,21 +15,6 @@ on:
       - '.github/workflows/promote_tested_version.yml'
 
 jobs:
-  del_runs:
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write
-      contents: read
-    steps:
-      - name: Delete workflow runs
-        uses: Mattraks/delete-workflow-runs@main
-        with:
-          token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          retain_days: 3
-          keep_minimum_runs: 3
-          
   Auto-Update:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest

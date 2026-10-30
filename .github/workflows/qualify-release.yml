@@ -1,0 +1,283 @@
+name: Qualify candidate API release (read only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_version:
+        description: Existing Xray version
+        required: true
+        type: string
+      base_installer_ref:
+        description: Existing installer commit
+        required: true
+        type: string
+      base_installer_sha256:
+        description: Existing installer SHA-256
+        required: true
+        type: string
+      candidate_version:
+        description: Candidate Xray version
+        required: true
+        type: string
+      candidate_installer_ref:
+        description: Candidate installer commit
+        required: true
+        type: string
+      candidate_installer_sha256:
+        description: Candidate installer SHA-256
+        required: true
+        type: string
+      candidate_tested_version:
+        description: Optional proposed Xray fallback version; defaults to the current fallback
+        required: false
+        type: string
+      allow_rollback:
+        description: Explicitly allow a verified older recommended Xray version
+        required: false
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - compatibility-baselines.json
+      - .github/scripts/qualify_legacy_upgrade.sh
+      - .github/scripts/collect_qualification_evidence.py
+      - .github/workflows/qualify-legacy-upgrade.yml
+      - .github/workflows/qualify-release.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: api-release-qualification-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  inputs:
+    runs-on: ubuntu-latest
+    outputs:
+      base_version: ${{ steps.resolve.outputs.base_version }}
+      base_ref: ${{ steps.resolve.outputs.base_ref }}
+      base_sha: ${{ steps.resolve.outputs.base_sha }}
+      candidate_version: ${{ steps.resolve.outputs.candidate_version }}
+      candidate_ref: ${{ steps.resolve.outputs.candidate_ref }}
+      candidate_sha: ${{ steps.resolve.outputs.candidate_sha }}
+      shell_commit: ${{ steps.resolve.outputs.shell_commit }}
+      shell_sha: ${{ steps.resolve.outputs.shell_sha }}
+      tested_version: ${{ steps.resolve.outputs.tested_version }}
+      candidate_tested_version: ${{ steps.resolve.outputs.candidate_tested_version }}
+      allow_rollback: ${{ steps.resolve.outputs.allow_rollback }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - id: resolve
+        env:
+          BASE_VERSION: ${{ inputs.base_version }}
+          BASE_REF: ${{ inputs.base_installer_ref }}
+          BASE_SHA: ${{ inputs.base_installer_sha256 }}
+          CANDIDATE_VERSION: ${{ inputs.candidate_version }}
+          CANDIDATE_REF: ${{ inputs.candidate_installer_ref }}
+          CANDIDATE_SHA: ${{ inputs.candidate_installer_sha256 }}
+          CANDIDATE_TESTED_VERSION: ${{ inputs.candidate_tested_version }}
+          ALLOW_ROLLBACK: ${{ inputs.allow_rollback }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          # PR-only fixture; manual dispatch requires all explicit inputs.
+          if [[ "$EVENT_NAME" != pull_request ]]; then
+            [[ -n "$BASE_VERSION" && -n "$BASE_REF" && -n "$BASE_SHA" && -n "$CANDIDATE_VERSION" && -n "$CANDIDATE_REF" && -n "$CANDIDATE_SHA" ]]
+          fi
+          BASE_VERSION=${BASE_VERSION:-26.3.27}
+          BASE_REF=${BASE_REF:-e741a4f56d368afbb9e5be3361b40c4552d3710d}
+          BASE_SHA=${BASE_SHA:-7f70c95f6b418da8b4f4883343d602964915e28748993870fd554383afdbe555}
+          # PRs test an actual version change with the historical installer;
+          # the separate legacy workflow also checks the known incompatible
+          # current installer. Production dispatch never uses these defaults.
+          CANDIDATE_VERSION=${CANDIDATE_VERSION:-26.10.29}
+          CANDIDATE_REF=${CANDIDATE_REF:-$BASE_REF}
+          CANDIDATE_SHA=${CANDIDATE_SHA:-$BASE_SHA}
+          [[ "$BASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$CANDIDATE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$BASE_REF" =~ ^[0-9a-f]{40}$ && "$CANDIDATE_REF" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{64}$ && "$CANDIDATE_SHA" =~ ^[0-9a-f]{64}$ ]]
+          shell_version=$(jq -r '.shell_online_version' xray_shell_versions.json)
+          tested_version=$(jq -r '.xray_tested_version // empty' xray_shell_versions.json)
+          [[ "$tested_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            CANDIDATE_TESTED_VERSION=${CANDIDATE_TESTED_VERSION:-26.3.27}
+          fi
+          CANDIDATE_TESTED_VERSION=${CANDIDATE_TESTED_VERSION:-$tested_version}
+          [[ "$CANDIDATE_TESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if [[ "$EVENT_NAME" != workflow_dispatch ]]; then ALLOW_ROLLBACK=false; fi
+          [[ "$ALLOW_ROLLBACK" == true || "$ALLOW_ROLLBACK" == false ]] || ALLOW_ROLLBACK=false
+          shell_sha=$(jq -r '.shell_release_sha256' xray_shell_versions.json)
+          shell_commit=$(jq -r --arg version "$shell_version" '[.baselines[] | select(.version == $version) | .commit] | if length == 1 then .[0] else empty end' compatibility-baselines.json)
+          baseline_sha=$(jq -r --arg version "$shell_version" '[.baselines[] | select(.version == $version) | .installSha256] | if length == 1 then .[0] else empty end' compatibility-baselines.json)
+          [[ "$shell_commit" =~ ^[0-9a-f]{40}$ && "$shell_sha" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$shell_sha" == "$baseline_sha" ]]
+          {
+            echo "base_version=$BASE_VERSION"
+            echo "base_ref=$BASE_REF"
+            echo "base_sha=$BASE_SHA"
+            echo "candidate_version=$CANDIDATE_VERSION"
+            echo "candidate_ref=$CANDIDATE_REF"
+            echo "candidate_sha=$CANDIDATE_SHA"
+            echo "shell_commit=$shell_commit"
+            echo "shell_sha=$shell_sha"
+            echo "tested_version=$tested_version"
+            echo "candidate_tested_version=$CANDIDATE_TESTED_VERSION"
+            echo "allow_rollback=$ALLOW_ROLLBACK"
+          } >> "$GITHUB_OUTPUT"
+
+  qualify:
+    needs: inputs
+    uses: ./.github/workflows/qualify-legacy-upgrade.yml
+    permissions:
+      contents: read
+    with:
+      base_version: ${{ needs.inputs.outputs.base_version }}
+      base_installer_ref: ${{ needs.inputs.outputs.base_ref }}
+      base_installer_sha256: ${{ needs.inputs.outputs.base_sha }}
+      candidate_version: ${{ needs.inputs.outputs.candidate_version }}
+      candidate_installer_ref: ${{ needs.inputs.outputs.candidate_ref }}
+      candidate_installer_sha256: ${{ needs.inputs.outputs.candidate_sha }}
+      candidate_tested_version: ${{ needs.inputs.outputs.candidate_tested_version }}
+
+  full-install:
+    needs: inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [xtls_only, ws_grpc_xhttp, reality, reality_nginx, tls]
+    name: Full install (${{ matrix.mode }})
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: api
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
+          repository: hello-yunshu/Xray_bash_onekey
+          ref: ${{ needs.inputs.outputs.shell_commit }}
+          path: shell
+          persist-credentials: false
+      - name: Install candidate through released shell
+        env:
+          SHELL_SHA: ${{ needs.inputs.outputs.shell_sha }}
+          XRAY_VERSIONS_FILE: ${{ github.workspace }}/api/xray_shell_versions.json
+          XRAY_CANDIDATE_VERSION: ${{ needs.inputs.outputs.candidate_version }}
+          XRAY_CANDIDATE_INSTALLER_REF: ${{ needs.inputs.outputs.candidate_ref }}
+          XRAY_CANDIDATE_INSTALLER_SHA256: ${{ needs.inputs.outputs.candidate_sha }}
+          INSTALL_MODE: ${{ matrix.mode }}
+        run: |
+          set -euo pipefail
+          [[ $(sha256sum shell/install.sh | awk '{print $1}') == "$SHELL_SHA" ]]
+          sudo -E bash shell/.github/test/test_install.sh "$INSTALL_MODE"
+
+  installer-smoke:
+    needs: inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [fresh, reinstall, remove]
+    name: Installer smoke (${{ matrix.scenario }})
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: hello-yunshu/Xray_bash_onekey
+          ref: ${{ needs.inputs.outputs.shell_commit }}
+          path: shell
+          persist-credentials: false
+      - name: Verify and exercise exact installer
+        env:
+          SHELL_SHA: ${{ needs.inputs.outputs.shell_sha }}
+          XRAY_TARGET_VERSION: ${{ needs.inputs.outputs.candidate_version }}
+          XRAY_CANDIDATE_INSTALLER_REF: ${{ needs.inputs.outputs.candidate_ref }}
+          XRAY_CANDIDATE_INSTALLER_SHA256: ${{ needs.inputs.outputs.candidate_sha }}
+          XRAY_CURRENT_INSTALLER_REF: ${{ needs.inputs.outputs.base_ref }}
+          XRAY_CURRENT_INSTALLER_SHA256: ${{ needs.inputs.outputs.base_sha }}
+          SCENARIO: ${{ matrix.scenario }}
+        run: |
+          set -euo pipefail
+          [[ $(sha256sum shell/install.sh | awk '{print $1}') == "$SHELL_SHA" ]]
+          sudo -E bash shell/.github/test/test_installer_candidate_smoke.sh "$SCENARIO"
+
+  minimal-bootstrap:
+    needs: inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [debian:12-slim, debian:13-slim, ubuntu:24.04, ubuntu:26.04, 'quay.io/centos/centos:stream10']
+    name: Minimal bootstrap (${{ matrix.image }})
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: hello-yunshu/Xray_bash_onekey
+          ref: ${{ needs.inputs.outputs.shell_commit }}
+          path: shell
+          persist-credentials: false
+      - name: Verify shell and run minimal bootstrap
+        env:
+          SHELL_SHA: ${{ needs.inputs.outputs.shell_sha }}
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+          [[ $(sha256sum shell/install.sh | awk '{print $1}') == "$SHELL_SHA" ]]
+          docker run --rm -v "$PWD/shell:/repo:ro" -e REPO_DIR=/repo "$IMAGE" bash /repo/.github/test/test_minimal_bootstrap.sh
+
+  evidence:
+    needs: [inputs, qualify, full-install, installer-smoke, minimal-bootstrap]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Collect all successful exact jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_VERSION: ${{ needs.inputs.outputs.candidate_version }}
+          CANDIDATE_REF: ${{ needs.inputs.outputs.candidate_ref }}
+          CANDIDATE_SHA: ${{ needs.inputs.outputs.candidate_sha }}
+          BASE_VERSION: ${{ needs.inputs.outputs.base_version }}
+          BASE_REF: ${{ needs.inputs.outputs.base_ref }}
+          BASE_SHA: ${{ needs.inputs.outputs.base_sha }}
+          TESTED_VERSION: ${{ needs.inputs.outputs.tested_version }}
+          CANDIDATE_TESTED_VERSION: ${{ needs.inputs.outputs.candidate_tested_version }}
+          ALLOW_ROLLBACK: ${{ needs.inputs.outputs.allow_rollback }}
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" | jq '[.[].jobs[]]' > "$RUNNER_TEMP/jobs.json"
+          jq -n --arg v "$CANDIDATE_VERSION" --arg ref "$CANDIDATE_REF" --arg sha "$CANDIDATE_SHA" --arg tested "$CANDIDATE_TESTED_VERSION" --argjson rollback "$ALLOW_ROLLBACK" \
+            '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha,testedVersion:$tested,allowRollback:$rollback}' > "$RUNNER_TEMP/candidate.json"
+          jq -n --arg v "$BASE_VERSION" --arg ref "$BASE_REF" --arg sha "$BASE_SHA" --arg tested "$TESTED_VERSION" \
+            '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha,testedVersion:$tested}' > "$RUNNER_TEMP/base.json"
+          downloaded=false
+          for attempt in 1 2 3; do
+            rm -rf "$RUNNER_TEMP/binaries"
+            if gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+              --pattern "qualification-binary-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-*" --dir "$RUNNER_TEMP/binaries"; then
+              downloaded=true
+              break
+            fi
+            [[ "$attempt" == 3 ]] || sleep "$((attempt * 5))"
+          done
+          [[ "$downloaded" == true ]] || { echo 'Qualification binary evidence download failed' >&2; exit 1; }
+          python3 .github/scripts/collect_qualification_evidence.py \
+            --baselines compatibility-baselines.json --jobs "$RUNNER_TEMP/jobs.json" \
+            --candidate "$RUNNER_TEMP/candidate.json" --base "$RUNNER_TEMP/base.json" --binaries "$RUNNER_TEMP/binaries" --output evidence/compatibility.json \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --commit "$GITHUB_SHA"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qualification-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/compatibility.json
+          if-no-files-found: error

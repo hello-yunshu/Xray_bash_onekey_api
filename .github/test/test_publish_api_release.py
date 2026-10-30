@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+import importlib.util
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / '.github/scripts'))
+spec = importlib.util.spec_from_file_location('publish', ROOT / '.github/scripts/publish_api_release.py')
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+
+class PublishTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = Path(self.tmp.name)
+        self.old = {'xray_online_version': '26.3.27', 'xray_installer_ref': 'a' * 40,
+                    'xray_installer_sha256': 'b' * 64, 'xray_tested_version': '25.12.8'}
+        self.new = {'xray_online_version': '26.10.29', 'xray_installer_ref': 'c' * 40,
+                    'xray_installer_sha256': 'd' * 64}
+        evidence = {'base': {'xrayVersion': self.old['xray_online_version'],
+                             'installerRef': self.old['xray_installer_ref'],
+                             'installerSha256': self.old['xray_installer_sha256'],
+                             'testedVersion': self.old['xray_tested_version']}}
+        for name, doc in (('expected', self.old), ('candidate', self.new), ('evidence', evidence)):
+            (self.path / name).write_text(json.dumps(doc))
+        self.ref = {'object': {'type': 'commit', 'sha': 'e' * 40}}
+
+    def call(self):
+        module.publish('api-2026.10.30.1', self.path / 'evidence', self.path / 'expected',
+                       self.path / 'candidate', 100, 1)
+
+    def test_invalid_evidence_never_looks_up_or_creates_release(self):
+        with patch.object(module, 'api', return_value=self.ref), \
+             patch.object(module, 'source_file', side_effect=[self.old, {}]), \
+             patch.object(module.prepare_api_release, 'prepare', side_effect=ValueError('missing scenario')), \
+             patch.object(module, 'exists') as exists, patch.object(module.subprocess, 'run') as run:
+            with self.assertRaisesRegex(ValueError, 'missing scenario'):
+                self.call()
+            exists.assert_not_called()
+            run.assert_not_called()
+
+    def test_untrusted_run_never_creates_release(self):
+        with patch.object(module, 'api', return_value=self.ref), \
+             patch.object(module, 'source_file', side_effect=[self.old, {}]), \
+             patch.object(module.prepare_api_release, 'prepare', return_value={'compatibility.json': b'{}', 'xray_shell_versions.json': b'{}'}), \
+             patch.object(module.verify_qualification_run, 'verify', side_effect=ValueError('untrusted')), \
+             patch.object(module, 'exists') as exists, patch.object(module.subprocess, 'run') as run:
+            with self.assertRaisesRegex(ValueError, 'untrusted'):
+                self.call()
+            exists.assert_not_called()
+            run.assert_not_called()
+
+    def test_rejects_evidence_from_another_base_before_write(self):
+        evidence = json.loads((self.path / 'evidence').read_text())
+        evidence['base']['installerRef'] = 'f' * 40
+        (self.path / 'evidence').write_text(json.dumps(evidence))
+        with patch.object(module, 'api', return_value=self.ref), \
+             patch.object(module, 'source_file', side_effect=[self.old, {}]), \
+             patch.object(module, 'exists') as exists, patch.object(module.subprocess, 'run') as run:
+            with self.assertRaisesRegex(ValueError, 'base differs'):
+                self.call()
+            exists.assert_not_called()
+            run.assert_not_called()
+
+    def test_rejects_changed_fallback_before_release_write(self):
+        evidence = json.loads((self.path / 'evidence').read_text())
+        evidence['base']['testedVersion'] = '25.12.7'
+        (self.path / 'evidence').write_text(json.dumps(evidence))
+        with patch.object(module, 'api', return_value=self.ref), \
+             patch.object(module, 'source_file', side_effect=[self.old, {}]), \
+             patch.object(module, 'exists') as exists, patch.object(module.subprocess, 'run') as run:
+            with self.assertRaisesRegex(ValueError, 'fallback version differs'):
+                self.call()
+            exists.assert_not_called()
+            run.assert_not_called()
+
+    def test_existing_tag_without_release_is_not_adopted(self):
+        with patch.object(module, 'api', return_value=self.ref), \
+             patch.object(module, 'source_file', side_effect=[self.old, {}]), \
+             patch.object(module.prepare_api_release, 'prepare', return_value={'compatibility.json': b'{}', 'xray_shell_versions.json': b'{}'}), \
+             patch.object(module.verify_qualification_run, 'verify'), \
+             patch.object(module, 'exists', side_effect=[False, True]), \
+             patch.object(module.subprocess, 'run') as run:
+            with self.assertRaisesRegex(ValueError, 'tag already exists'):
+                self.call()
+            run.assert_not_called()
+
+    def test_existing_release_is_verified_without_write(self):
+        with patch.object(module, 'api', return_value=self.ref), \
+             patch.object(module, 'source_file', side_effect=[self.old, {}]), \
+             patch.object(module.prepare_api_release, 'prepare', return_value={'compatibility.json': b'{}', 'xray_shell_versions.json': b'{}'}), \
+             patch.object(module.verify_qualification_run, 'verify'), \
+             patch.object(module, 'exists', return_value=True), \
+             patch.object(module.verify_api_release, 'verify') as verify, patch.object(module.subprocess, 'run') as run:
+            self.call()
+            verify.assert_called_once()
+            run.assert_not_called()
+
+    def test_main_movement_stops_before_release_creation(self):
+        moved = {'object': {'type': 'commit', 'sha': 'f' * 40}}
+        with patch.object(module, 'api', side_effect=[self.ref, moved]), \
+             patch.object(module, 'source_file', side_effect=[self.old, {}]), \
+             patch.object(module.prepare_api_release, 'prepare', return_value={'compatibility.json': b'{}', 'xray_shell_versions.json': b'{}'}), \
+             patch.object(module.verify_qualification_run, 'verify'), \
+             patch.object(module, 'exists') as exists, patch.object(module.subprocess, 'run') as run:
+            with self.assertRaisesRegex(ValueError, 'main moved'):
+                self.call()
+            exists.assert_not_called()
+            run.assert_not_called()
+
+    def test_fallback_snapshot_rejects_unrelated_changes(self):
+        evidence = json.loads((self.path / 'evidence').read_text())
+        evidence['candidate'] = {'testedVersion': '26.3.27'}
+        (self.path / 'evidence').write_text(json.dumps(evidence))
+        proposed = dict(self.old, xray_tested_version='26.3.27', extra='unexpected')
+        (self.path / 'proposed').write_text(json.dumps(proposed))
+        (self.path / 'candidate').write_text(json.dumps(self.old))
+        with patch.object(module, 'api', return_value=self.ref), \
+             patch.object(module, 'source_file', side_effect=[self.old, {}]), \
+             patch.object(module, 'exists') as exists:
+            with self.assertRaisesRegex(ValueError, 'unrelated metadata'):
+                module.publish('api-2026.10.30.1', self.path / 'evidence', self.path / 'expected',
+                               self.path / 'candidate', 100, 1, self.path / 'proposed')
+            exists.assert_not_called()
+
+    def test_fallback_snapshot_is_published_before_metadata_promotion(self):
+        evidence = json.loads((self.path / 'evidence').read_text())
+        evidence['candidate'] = {'testedVersion': '26.3.27'}
+        (self.path / 'evidence').write_text(json.dumps(evidence))
+        proposed = dict(self.old, xray_tested_version='26.3.27', xray_tested_at='2026-10-30T10:00:00Z')
+        (self.path / 'proposed').write_text(json.dumps(proposed))
+        (self.path / 'candidate').write_text(json.dumps(self.old))
+        with patch.object(module, 'api', return_value=self.ref), \
+             patch.object(module, 'source_file', side_effect=[self.old, {}]), \
+             patch.object(module.prepare_api_release, 'prepare', return_value={'compatibility.json': b'{}', 'xray_shell_versions.json': b'{}'}) as prepare, \
+             patch.object(module.verify_qualification_run, 'verify'), \
+             patch.object(module, 'exists', side_effect=[False, False]), \
+             patch.object(module.verify_api_release, 'verify') as verify, \
+             patch.object(module.subprocess, 'run') as run:
+            module.publish('api-2026.10.30.1', self.path / 'evidence', self.path / 'expected',
+                           self.path / 'candidate', 100, 1, self.path / 'proposed')
+            self.assertEqual(prepare.call_args.args[0], proposed)
+            run.assert_called_once()
+            verify.assert_called_once()
+
+    def test_rollback_requires_explicit_flag_and_trusted_run(self):
+        newer = dict(self.new, xray_tested_version=self.old['xray_tested_version'])
+        older = dict(self.old)
+        base = {'xrayVersion': newer['xray_online_version'], 'installerRef': newer['xray_installer_ref'],
+                'installerSha256': newer['xray_installer_sha256'], 'testedVersion': newer['xray_tested_version']}
+        evidence = {'base': base, 'candidate': {'allowRollback': False}}
+        for name, value in (('expected', newer), ('candidate', older), ('evidence', evidence)):
+            (self.path / name).write_text(json.dumps(value))
+        with patch.object(module, 'api', return_value=self.ref), \
+             patch.object(module, 'source_file', side_effect=[newer, {}]), \
+             patch.object(module, 'exists') as exists:
+            with self.assertRaisesRegex(ValueError, 'downgrade'):
+                self.call()
+            exists.assert_not_called()
+        evidence['candidate']['allowRollback'] = True
+        (self.path / 'evidence').write_text(json.dumps(evidence))
+        with patch.object(module, 'api', return_value=self.ref), \
+             patch.object(module, 'source_file', side_effect=[newer, {}]), \
+             patch.object(module.prepare_api_release, 'prepare', return_value={'compatibility.json': b'{}', 'xray_shell_versions.json': b'{}'}), \
+             patch.object(module.verify_qualification_run, 'verify', side_effect=ValueError('untrusted')), \
+             patch.object(module, 'exists') as exists:
+            with self.assertRaisesRegex(ValueError, 'untrusted'):
+                self.call()
+            exists.assert_not_called()
+
+
+if __name__ == '__main__':
+    unittest.main()

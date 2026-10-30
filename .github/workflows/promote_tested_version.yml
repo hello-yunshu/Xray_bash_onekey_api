@@ -33,9 +33,14 @@ on:
         description: 'Optional reason or verification note (max 500 chars, control chars stripped)'
         required: false
         type: string
+      qualification_run:
+        description: 'Successful qualification run ID (required for Xray fallback)'
+        required: false
+        type: string
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   promote:
@@ -48,6 +53,30 @@ jobs:
 
       - name: Install jq
         run: sudo apt-get update -qq && sudo apt-get install -y -qq jq
+
+      - name: Authenticate Xray fallback qualification
+        id: qualification
+        if: inputs.component == 'xray'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUAL_RUN: ${{ inputs.qualification_run }}
+          TARGET: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main && "$QUAL_RUN" =~ ^[1-9][0-9]*$ ]]
+          [[ $(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha) == "$GITHUB_SHA" ]]
+          attempt=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$QUAL_RUN" --jq .run_attempt)
+          [[ "$attempt" =~ ^[1-9][0-9]*$ ]]
+          started=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$QUAL_RUN" --jq .created_at)
+          [[ "$started" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          gh run download "$QUAL_RUN" --repo "$GITHUB_REPOSITORY" --name "qualification-evidence-$QUAL_RUN-$attempt" --dir "$tmp"
+          python3 .github/scripts/verify_tested_promotion.py --evidence "$tmp/compatibility.json" \
+            --current xray_shell_versions.json --baselines compatibility-baselines.json \
+            --target "$TARGET" --run-id "$QUAL_RUN" --attempt "$attempt" --commit "$GITHUB_SHA"
+          echo "attempt=$attempt" >> "$GITHUB_OUTPUT"
+          echo "started=$started" >> "$GITHUB_OUTPUT"
 
       - name: Make promote script executable
         run: chmod +x .github/scripts/promote_tested_version.sh
@@ -67,6 +96,7 @@ jobs:
           COMPONENT: ${{ inputs.component }}
           VERSION: ${{ inputs.version }}
           NOTE: ${{ inputs.note }}
+          PROMOTION_TIMESTAMP: ${{ steps.qualification.outputs.started }}
         run: |
           set -euo pipefail
           bash .github/scripts/promote_tested_version.sh "${COMPONENT}" "${VERSION}" "${NOTE}"
@@ -132,6 +162,32 @@ jobs:
 
           echo "✅ All pre-commit validations passed"
 
+      - name: Publish and verify the qualified fallback snapshot
+        if: inputs.component == 'xray'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUAL_RUN: ${{ inputs.qualification_run }}
+          QUAL_ATTEMPT: ${{ steps.qualification.outputs.attempt }}
+          QUAL_STARTED: ${{ steps.qualification.outputs.started }}
+        run: |
+          set -euo pipefail
+          [[ "$QUAL_RUN" =~ ^[1-9][0-9]*$ && "$QUAL_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          gh run download "$QUAL_RUN" --repo "$GITHUB_REPOSITORY" --name "qualification-evidence-$QUAL_RUN-$QUAL_ATTEMPT" --dir "$tmp/evidence"
+          jq -e '{xray_online_version:.base.xrayVersion,xray_installer_ref:.base.installerRef,xray_installer_sha256:.base.installerSha256}' "$tmp/evidence/compatibility.json" > "$tmp/expected.json"
+          jq -e '{xray_online_version:.candidate.xrayVersion,xray_installer_ref:.candidate.installerRef,xray_installer_sha256:.candidate.installerSha256}' "$tmp/evidence/compatibility.json" > "$tmp/candidate.json"
+          day=${QUAL_STARTED:0:10}
+          tag="api-${day//-/.}.${QUAL_RUN}"
+          python3 .github/scripts/publish_api_release.py --tag "$tag" --evidence "$tmp/evidence/compatibility.json" \
+            --expected "$tmp/expected.json" --candidate "$tmp/candidate.json" --tested-metadata xray_shell_versions.json \
+            --run-id "$QUAL_RUN" --attempt "$QUAL_ATTEMPT"
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern xray_shell_versions.json --dir "$tmp/release"
+          jq -cS . xray_shell_versions.json > "$tmp/current.sorted"
+          jq -cS . "$tmp/release/xray_shell_versions.json" > "$tmp/release.sorted"
+          cmp "$tmp/current.sorted" "$tmp/release.sorted"
+          cp "$tmp/release/xray_shell_versions.json" xray_shell_versions.json
+
       - name: Commit promoted version
         env:
           COMPONENT: ${{ inputs.component }}
@@ -151,3 +207,6 @@ jobs:
           new: ${VERSION}
           promoted_at: $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
           git push origin HEAD:"${GITHUB_REF_NAME:-main}"
+          if [[ "$COMPONENT" == xray ]]; then
+            curl -fsS 'https://purge.jsdelivr.net/gh/hello-yunshu/Xray_bash_onekey_api@main/xray_shell_versions.json' >/dev/null || true
+          fi
