@@ -56,3 +56,4 @@ jobs:
           bash .github/test/test_watch_upstreams_contract.sh
           python3 .github/test/test_prepare_api_release.py
           python3 .github/test/test_verify_qualification_run.py
+          python3 .github/test/test_stage_candidate_metadata.py
