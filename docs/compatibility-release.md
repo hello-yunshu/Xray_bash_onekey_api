@@ -20,6 +20,13 @@ then pushes the validated pair together. The push is not forced: a concurrent
 main-branch update requires a fresh qualification. Existing clients continue
 to use `main/xray_shell_versions.json`.
 
+For an intentional withdrawal of the recommended Xray version, manually
+dispatch the same qualification with the desired exact older pair and enable
+`allow_rollback`. All ordinary tests, evidence checks, Release verification
+and concurrency checks still apply. Scheduled discovery never enables this
+option. Changing the recommendation does not itself run an update on a
+client's installed Xray.
+
 To propose a new Xray `tested_version`, dispatch `qualify-release.yml` on
 `main` with the current online tuple as both base and candidate, and set
 `candidate_tested_version` to the proposed fallback. After all jobs succeed,

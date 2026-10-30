@@ -37,6 +37,12 @@ class StageCandidateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'installer identity'):
             module.stage(self.old, self.old, dict(self.new, xray_installer_sha256='invalid'))
 
+    def test_explicit_rollback_still_checks_baseline(self):
+        staged = module.stage(self.new, self.new, self.old, allow_rollback=True)
+        self.assertEqual(staged['xray_online_version'], self.old['xray_online_version'])
+        with self.assertRaisesRegex(ValueError, 'baseline changed'):
+            module.stage(dict(self.new, xray_installer_ref='e' * 40), self.new, self.old, allow_rollback=True)
+
 
 if __name__ == '__main__':
     unittest.main()
