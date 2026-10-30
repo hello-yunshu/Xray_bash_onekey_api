@@ -33,6 +33,11 @@ def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt):
         versions.add(version)
         if not re.fullmatch(r'[0-9a-f]{40}', baseline['commit']) or not re.fullmatch(r'[0-9a-f]{64}', baseline['installSha256']):
             raise ValueError('invalid baseline identity')
+        initial = baseline.get('initial', {k: base[k] for k in ('xrayVersion', 'installerRef', 'installerSha256')})
+        for field, pattern in (('xrayVersion', r'[0-9]+\.[0-9]+\.[0-9]+'),
+                               ('installerRef', r'[0-9a-f]{40}'), ('installerSha256', r'[0-9a-f]{64}')):
+            if not isinstance(initial.get(field), str) or not re.fullmatch(pattern, initial[field]):
+                raise ValueError('invalid initial baseline tuple')
         scenarios = {}
         for key, scenario in SCENARIOS.items():
             name = f'qualify / Legacy upgrade ({version}, {scenario})'
@@ -45,7 +50,7 @@ def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt):
             fact_key = f'{version}-{scenario}'
             fact = facts.get(fact_key, {})
             expected_version = (base.get('testedVersion') if key == 'fallback' else
-                                base['xrayVersion'] if key == 'failure-recovery' else candidate['xrayVersion'])
+                                initial['xrayVersion'] if key == 'failure-recovery' else candidate['xrayVersion'])
             if (fact.get('version') != expected_version or
                     not re.fullmatch(r'[0-9a-f]{64}', str(fact.get('sha256', ''))) or
                     fact.get('arch') not in ('x86_64', 'aarch64')):
@@ -57,14 +62,14 @@ def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt):
             coverage = 'production-entry'
             if key == 'fallback':
                 coverage = 'direct-fallback-function'
-            elif key == 'legacy-upgrade' and base['xrayVersion'] == candidate['xrayVersion']:
+            elif key == 'legacy-upgrade' and initial['xrayVersion'] == candidate['xrayVersion']:
                 coverage = 'same-version-reinstall'
             scenarios[key] = {'conclusion': 'success', 'runId': run_id, 'jobId': job_id, 'job': name,
                               'binary': fact,
                               'environment': {'runner': 'ubuntu-latest', 'mode': 'reality',
                                               'coverage': coverage}}
         entries.append({'version': version, 'commit': baseline['commit'],
-                        'installSha256': baseline['installSha256'], 'scenarios': scenarios})
+                        'installSha256': baseline['installSha256'], 'initial': initial, 'scenarios': scenarios})
     modes = []
     for mode in MODES:
         name = f'Full install ({mode})'

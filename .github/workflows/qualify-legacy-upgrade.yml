@@ -99,9 +99,9 @@ jobs:
           UPGRADE_SCENARIO: ${{ matrix.scenario }}
           QUALIFICATION_BINARY_EVIDENCE: ${{ runner.temp }}/xray-binary.json
           XRAY_VERSIONS_FILE: ${{ github.workspace }}/api/xray_shell_versions.json
-          BASE_XRAY_VERSION: ${{ inputs.base_version }}
-          BASE_INSTALLER_REF: ${{ inputs.base_installer_ref }}
-          BASE_INSTALLER_SHA256: ${{ inputs.base_installer_sha256 }}
+          BASE_XRAY_VERSION: ${{ matrix.baseline.initial.xrayVersion || inputs.base_version }}
+          BASE_INSTALLER_REF: ${{ matrix.baseline.initial.installerRef || inputs.base_installer_ref }}
+          BASE_INSTALLER_SHA256: ${{ matrix.baseline.initial.installerSha256 || inputs.base_installer_sha256 }}
           XRAY_CANDIDATE_VERSION: ${{ inputs.candidate_version }}
           XRAY_CANDIDATE_INSTALLER_REF: ${{ inputs.candidate_installer_ref }}
           XRAY_CANDIDATE_INSTALLER_SHA256: ${{ inputs.candidate_installer_sha256 }}

@@ -54,6 +54,12 @@ class PrepareReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'run identity'):
             self.prepare()
 
+    def test_rejects_mismatched_initial_tuple(self):
+        self.baselines['baselines'][0]['initial'] = {'xrayVersion': '26.3.27'}
+        self.evidence['baselines'][0]['initial'] = {'xrayVersion': '26.10.29'}
+        with self.assertRaisesRegex(ValueError, 'initial baseline tuple mismatch'):
+            self.prepare()
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -62,6 +62,15 @@ class CollectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'inconsistent binary'):
             self.collect()
 
+    def test_distinguishes_legacy_initial_tuple_from_online_base(self):
+        initial = {'xrayVersion': '25.12.8', 'installerRef': '1' * 40, 'installerSha256': '2' * 64}
+        self.baselines['baselines'][0]['initial'] = initial
+        self.facts['3.2.9-failure-recovery']['version'] = '25.12.8'
+        self.facts['3.2.9-failure-recovery']['sha256'] = 'f' * 64
+        result = self.collect()['baselines'][0]
+        self.assertEqual(result['initial'], initial)
+        self.assertEqual(result['scenarios']['legacy-upgrade']['environment']['coverage'], 'production-entry')
+
 
 if __name__ == '__main__':
     unittest.main()

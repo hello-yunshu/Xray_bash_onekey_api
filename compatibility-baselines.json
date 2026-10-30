@@ -6,7 +6,12 @@
       "version": "3.2.9",
       "tag": "v3.2.9",
       "commit": "81144f022977b8bba800b96a5afbbd1a2117238d",
-      "installSha256": "1e6684691d864d5504c6084e8d0261a1bc9efb9acefd385ace44f18a83f4d5a2"
+      "installSha256": "1e6684691d864d5504c6084e8d0261a1bc9efb9acefd385ace44f18a83f4d5a2",
+      "initial": {
+        "xrayVersion": "26.3.27",
+        "installerRef": "e741a4f56d368afbb9e5be3361b40c4552d3710d",
+        "installerSha256": "7f70c95f6b418da8b4f4883343d602964915e28748993870fd554383afdbe555"
+      }
     },
     {
       "version": "3.2.10",
