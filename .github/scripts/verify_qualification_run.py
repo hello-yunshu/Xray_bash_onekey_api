@@ -10,7 +10,7 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path
-from collect_qualification_evidence import MODES, SCENARIOS
+from collect_qualification_evidence import INSTALLER_SCENARIOS, MODES, SCENARIOS
 
 
 def api(path):
@@ -48,6 +48,14 @@ def verify(evidence_bytes, repo, run_id, trusted_sha, attempt):
         matches = [job for job in jobs if job.get('id') == result.get('jobId')]
         if result.get('runId') != run_id or result.get('job') != name or len(matches) != 1 or matches[0].get('name') != name or matches[0].get('status') != 'completed' or matches[0].get('conclusion') != 'success':
             raise ValueError('full installation job missing or unsuccessful')
+    installer_jobs = evidence.get('installerJobs')
+    if not isinstance(installer_jobs, list) or len(installer_jobs) != len(INSTALLER_SCENARIOS) or {j.get('scenario') for j in installer_jobs} != set(INSTALLER_SCENARIOS):
+        raise ValueError('missing installer smoke scenarios')
+    for result in installer_jobs:
+        name = f"Installer smoke ({result['scenario']})"
+        matches = [job for job in jobs if job.get('id') == result.get('jobId')]
+        if result.get('runId') != run_id or result.get('job') != name or len(matches) != 1 or matches[0].get('name') != name or matches[0].get('status') != 'completed' or matches[0].get('conclusion') != 'success':
+            raise ValueError('installer smoke job missing or unsuccessful')
     for baseline in evidence['baselines']:
         version = baseline['version']
         if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version):

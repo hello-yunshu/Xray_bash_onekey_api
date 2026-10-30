@@ -18,6 +18,8 @@ class CollectionTests(unittest.TestCase):
                       'conclusion': 'success', 'id': i + 1} for i, scenario in enumerate(module.SCENARIOS.values())]
         self.jobs.extend({'name': f'Full install ({mode})', 'status': 'completed',
                           'conclusion': 'success', 'id': i + 100} for i, mode in enumerate(module.MODES))
+        self.jobs.extend({'name': f'Installer smoke ({scenario})', 'status': 'completed',
+                          'conclusion': 'success', 'id': i + 200} for i, scenario in enumerate(module.INSTALLER_SCENARIOS))
 
     def collect(self):
         return module.collect(self.baselines, self.jobs, self.candidate, self.candidate, 123, 'e' * 40, 1)

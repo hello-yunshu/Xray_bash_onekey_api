@@ -6,7 +6,7 @@ on:
     - cron: '0 2 * * *'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: verify-promote-upstreams
@@ -32,131 +32,18 @@ jobs:
       - id: discover
         run: bash .github/scripts/discover_upstream_candidates.sh
 
-  qualify-xray-fresh:
+  dispatch-qualification:
     needs: discover
     if: needs.discover.outputs.xray_changed == '1' || needs.discover.outputs.installer_changed == '1' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        mode:
-          - xtls_only
-          - ws_grpc_xhttp
-          - reality
-          - reality_nginx
-          - tls
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          repository: hello-yunshu/Xray_bash_onekey
-          ref: ${{ needs.discover.outputs.main_sha }}
-          fetch-depth: 1
-          persist-credentials: false
-      - name: Record exact qualification inputs
-        run: |
-          printf 'MAIN_REPO_SHA=%s\nXRAY_CANDIDATE=%s\nINSTALLER_REF=%s\nMODE=%s\n' \
-            '${{ needs.discover.outputs.main_sha }}' \
-            '${{ needs.discover.outputs.candidate_version }}' \
-            '${{ needs.discover.outputs.installer_candidate_ref }}' \
-            '${{ matrix.mode }}'
-      - name: Isolated fresh install qualification
-        env:
-          XRAY_CANDIDATE_VERSION: ${{ needs.discover.outputs.candidate_version }}
-          XRAY_CANDIDATE_INSTALLER_REF: ${{ needs.discover.outputs.installer_candidate_ref }}
-          XRAY_CANDIDATE_INSTALLER_SHA256: ${{ needs.discover.outputs.installer_candidate_sha }}
-        run: sudo -E bash .github/test/test_install.sh '${{ matrix.mode }}'
-
-  qualify-xray-upgrade:
-    needs: discover
-    if: needs.discover.outputs.xray_changed == '1' || needs.discover.outputs.installer_changed == '1' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          repository: hello-yunshu/Xray_bash_onekey
-          ref: ${{ needs.discover.outputs.main_sha }}
-          fetch-depth: 1
-          persist-credentials: false
-      - name: Existing transaction rollback regression
-        run: bash .github/test/test_xray_update_transaction.sh
-      - name: Representative real upgrade qualification
-        env:
-          BASE_XRAY_VERSION: ${{ needs.discover.outputs.current_xray_version }}
-          XRAY_CANDIDATE_VERSION: ${{ needs.discover.outputs.candidate_version }}
-          XRAY_CANDIDATE_INSTALLER_REF: ${{ needs.discover.outputs.installer_candidate_ref }}
-          XRAY_CANDIDATE_INSTALLER_SHA256: ${{ needs.discover.outputs.installer_candidate_sha }}
-        run: sudo -E bash .github/test/test_candidate_real_upgrade.sh
-
-  qualify-installer:
-    needs: discover
-    if: needs.discover.outputs.installer_changed == '1' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        scenario:
-          - fresh
-          - reinstall
-          - remove
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          repository: hello-yunshu/Xray_bash_onekey
-          ref: ${{ needs.discover.outputs.main_sha }}
-          fetch-depth: 1
-          persist-credentials: false
-      - name: Real installer CLI qualification
-        env:
-          XRAY_TARGET_VERSION: ${{ needs.discover.outputs.candidate_version }}
-          XRAY_CANDIDATE_INSTALLER_REF: ${{ needs.discover.outputs.installer_candidate_ref }}
-          XRAY_CANDIDATE_INSTALLER_SHA256: ${{ needs.discover.outputs.installer_candidate_sha }}
-          XRAY_CURRENT_INSTALLER_REF: ${{ needs.discover.outputs.current_installer_ref }}
-          XRAY_CURRENT_INSTALLER_SHA256: ${{ needs.discover.outputs.current_installer_sha }}
-        run: sudo -E bash .github/test/test_installer_candidate_smoke.sh '${{ matrix.scenario }}'
-
-  qualify-legacy:
-    needs: discover
-    if: needs.discover.outputs.xray_changed == '1' || needs.discover.outputs.installer_changed == '1' || github.event_name == 'workflow_dispatch'
-    uses: ./.github/workflows/qualify-legacy-upgrade.yml
     permissions:
       contents: read
-    with:
-      base_version: ${{ needs.discover.outputs.current_xray_version }}
-      base_installer_ref: ${{ needs.discover.outputs.current_installer_ref }}
-      base_installer_sha256: ${{ needs.discover.outputs.current_installer_sha }}
-      candidate_version: ${{ needs.discover.outputs.candidate_version }}
-      candidate_installer_ref: ${{ needs.discover.outputs.installer_candidate_ref }}
-      candidate_installer_sha256: ${{ needs.discover.outputs.installer_candidate_sha }}
-
-  compatibility-release-gate:
-    needs: [discover, qualify-xray-fresh, qualify-xray-upgrade, qualify-installer, qualify-legacy]
-    if: always() && (needs.discover.outputs.xray_changed == '1' || needs.discover.outputs.installer_changed == '1')
-    runs-on: ubuntu-latest
-    permissions: {}
+      actions: write
     steps:
-      - name: Refuse incomplete qualification
-        run: |
-          echo 'Full evidence generation, verification and immutable release publication are not wired yet.' >&2
-          exit 1
-
-  promote-paired:
-    needs: [discover, compatibility-release-gate]
-    if: >-
-      needs.compatibility-release-gate.result == 'success' &&
-      (needs.discover.outputs.xray_changed == '1' || needs.discover.outputs.installer_changed == '1')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: main
-          fetch-depth: 0
-      - name: Stage paired candidate only against unchanged baseline
+      - name: Start read-only qualification of the final candidate tuple
         env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           BASE_VERSION: ${{ needs.discover.outputs.current_xray_version }}
           BASE_REF: ${{ needs.discover.outputs.current_installer_ref }}
           BASE_SHA: ${{ needs.discover.outputs.current_installer_sha }}
@@ -165,26 +52,10 @@ jobs:
           CANDIDATE_SHA: ${{ needs.discover.outputs.installer_candidate_sha }}
         run: |
           set -euo pipefail
-          tmp=$(mktemp -d)
-          trap 'rm -rf "$tmp"' EXIT
-          jq -n --arg v "$BASE_VERSION" --arg ref "$BASE_REF" --arg sha "$BASE_SHA" \
-            '{xray_online_version:$v,xray_installer_ref:$ref,xray_installer_sha256:$sha}' > "$tmp/expected.json"
-          jq -n --arg v "$CANDIDATE_VERSION" --arg ref "$CANDIDATE_REF" --arg sha "$CANDIDATE_SHA" \
-            '{xray_online_version:$v,xray_installer_ref:$ref,xray_installer_sha256:$sha}' > "$tmp/candidate.json"
-          python3 .github/scripts/stage_candidate_metadata.py \
-            --current xray_shell_versions.json --expected "$tmp/expected.json" \
-            --candidate "$tmp/candidate.json" --output "$tmp/staged.json"
-          mv "$tmp/staged.json" xray_shell_versions.json
-          bash validate-json.sh
-          if git diff --quiet -- xray_shell_versions.json; then
-            echo 'Paired metadata is already current'
-            exit 0
-          fi
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add xray_shell_versions.json
-          git commit -m "promote(xray): paired candidate $CANDIDATE_VERSION"
-          # A competing main update causes a non-fast-forward failure. Never
-          # force-push or blindly rebase an already-qualified candidate.
-          git push origin HEAD:main
-          curl -fsS 'https://purge.jsdelivr.net/gh/hello-yunshu/Xray_bash_onekey_api@main/xray_shell_versions.json' >/dev/null || true
+          gh workflow run qualify-release.yml --ref main \
+            -f base_version="$BASE_VERSION" \
+            -f base_installer_ref="$BASE_REF" \
+            -f base_installer_sha256="$BASE_SHA" \
+            -f candidate_version="$CANDIDATE_VERSION" \
+            -f candidate_installer_ref="$CANDIDATE_REF" \
+            -f candidate_installer_sha256="$CANDIDATE_SHA"

@@ -9,6 +9,7 @@ SCENARIOS = {'fresh': 'fresh', 'legacy-upgrade': 'direct',
              'shell-then-upgrade': 'shell-first', 'reinstall': 'reinstall',
              'failure-recovery': 'failure-recovery', 'fallback': 'fallback'}
 MODES = ('xtls_only', 'ws_grpc_xhttp', 'reality', 'reality_nginx', 'tls')
+INSTALLER_SCENARIOS = ('fresh', 'reinstall', 'remove')
 
 
 def collect(baselines, jobs, candidate, base, run_id, commit, attempt):
@@ -54,8 +55,18 @@ def collect(baselines, jobs, candidate, base, run_id, commit, attempt):
         if not isinstance(job_id, int) or isinstance(job_id, bool) or job_id < 1:
             raise ValueError(f'invalid job identity: {name}')
         modes.append({'mode': mode, 'runId': run_id, 'jobId': job_id, 'job': name})
+    installer_jobs = []
+    for scenario in INSTALLER_SCENARIOS:
+        name = f'Installer smoke ({scenario})'
+        found = [job for job in jobs if job.get('name') == name]
+        if len(found) != 1 or found[0].get('status') != 'completed' or found[0].get('conclusion') != 'success':
+            raise ValueError(f'missing or unsuccessful job: {name}')
+        job_id = found[0].get('id')
+        if not isinstance(job_id, int) or isinstance(job_id, bool) or job_id < 1:
+            raise ValueError(f'invalid job identity: {name}')
+        installer_jobs.append({'scenario': scenario, 'runId': run_id, 'jobId': job_id, 'job': name})
     return {'schemaVersion': 1, 'candidate': candidate, 'base': base, 'qualificationCommit': commit,
-            'runAttempt': attempt, 'modeJobs': modes, 'baselines': entries}
+            'runAttempt': attempt, 'modeJobs': modes, 'installerJobs': installer_jobs, 'baselines': entries}
 
 
 def main():
