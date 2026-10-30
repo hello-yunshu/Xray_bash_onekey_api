@@ -17,6 +17,15 @@ scenario=${UPGRADE_SCENARIO:-direct}
 [[ $(sha256sum "$legacy/install.sh" | awk '{print $1}') == "$expected_sha" ]]
 log=$(mktemp)
 trap 'rm -f "$log"' EXIT
+record_binary() {
+    [[ -n ${QUALIFICATION_BINARY_EVIDENCE:-} ]] || return 0
+    local installed digest arch
+    installed=$(/usr/local/bin/xray version | awk 'NR==1 {sub(/^v/, "", $2); print $2}')
+    digest=$(sha256sum /usr/local/bin/xray | awk '{print $1}')
+    arch=$(uname -m)
+    jq -n --arg version "$installed" --arg sha256 "$digest" --arg arch "$arch" \
+        '{version:$version,sha256:$sha256,arch:$arch}' > "$QUALIFICATION_BINARY_EVIDENCE"
+}
 diagnose() {
     # Only print fixed classifications; raw installer logs can contain secrets.
     if grep -qi 'permission denied' "$log" || journalctl -u xray --no-pager -n 40 2>/dev/null | grep -qi 'permission denied'; then
@@ -62,6 +71,7 @@ if [[ $scenario == fresh ]]; then
     [[ -n $user ]] || user=root
     runuser -u "$user" -- test -r /usr/local/etc/xray/config.json
     runuser -u "$user" -- test -w /var/log/xray
+    record_binary
     echo "Legacy fresh install passed: Xray $candidate, service account $user"
     exit 0
 fi
@@ -79,6 +89,7 @@ if [[ $scenario == failure-recovery ]]; then
     [[ $(/usr/local/bin/xray version | awk 'NR==1 {sub(/^v/, "", $2); print $2}') == "$base" ]]
     [[ $(sha256sum /etc/idleleo/conf/xray/config.json | awk '{print $1}') == "$config_sha" ]]
     systemctl is-active --quiet xray || { echo 'Original service was not restored after rejection' >&2; diagnose; exit 1; }
+    record_binary
     echo "Legacy failure recovery passed: retained Xray $base and original config"
     exit 0
 fi
@@ -108,6 +119,7 @@ if [[ $scenario == fallback ]]; then
     [[ -n $user ]] || user=root
     runuser -u "$user" -- test -r /usr/local/etc/xray/config.json
     runuser -u "$user" -- test -w /var/log/xray
+    record_binary
     echo "Legacy tested-version fallback passed: Xray $tested, service account $user"
     exit 0
 fi
@@ -140,4 +152,5 @@ user=$(systemctl show xray -p User --value)
 [[ -n $user ]] || user=root
 runuser -u "$user" -- test -r /usr/local/etc/xray/config.json
 runuser -u "$user" -- test -w /var/log/xray
+record_binary
 echo "Legacy upgrade passed: $scenario, Xray $install_version -> $candidate, service account $user, config unchanged"

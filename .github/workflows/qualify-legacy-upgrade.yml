@@ -97,6 +97,7 @@ jobs:
           LEGACY_REPO: ${{ github.workspace }}/legacy
           LEGACY_INSTALL_SHA256: ${{ matrix.baseline.installSha256 }}
           UPGRADE_SCENARIO: ${{ matrix.scenario }}
+          QUALIFICATION_BINARY_EVIDENCE: ${{ runner.temp }}/xray-binary.json
           XRAY_VERSIONS_FILE: ${{ github.workspace }}/api/xray_shell_versions.json
           BASE_XRAY_VERSION: ${{ inputs.base_version }}
           BASE_INSTALLER_REF: ${{ inputs.base_installer_ref }}
@@ -115,3 +116,8 @@ jobs:
           export XRAY_CANDIDATE_INSTALLER_REF="${XRAY_CANDIDATE_INSTALLER_REF:-$(jq -r .xray_installer_ref "$XRAY_VERSIONS_FILE")}"
           export XRAY_CANDIDATE_INSTALLER_SHA256="${XRAY_CANDIDATE_INSTALLER_SHA256:-$(jq -r .xray_installer_sha256 "$XRAY_VERSIONS_FILE")}"
           sudo -E bash api/.github/scripts/qualify_legacy_upgrade.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qualification-binary-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.baseline.version }}-${{ matrix.scenario }}
+          path: ${{ runner.temp }}/xray-binary.json
+          if-no-files-found: error

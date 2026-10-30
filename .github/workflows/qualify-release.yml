@@ -55,6 +55,7 @@ jobs:
       candidate_sha: ${{ steps.resolve.outputs.candidate_sha }}
       shell_commit: ${{ steps.resolve.outputs.shell_commit }}
       shell_sha: ${{ steps.resolve.outputs.shell_sha }}
+      tested_version: ${{ steps.resolve.outputs.tested_version }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -88,6 +89,8 @@ jobs:
           [[ "$BASE_REF" =~ ^[0-9a-f]{40}$ && "$CANDIDATE_REF" =~ ^[0-9a-f]{40}$ ]]
           [[ "$BASE_SHA" =~ ^[0-9a-f]{64}$ && "$CANDIDATE_SHA" =~ ^[0-9a-f]{64}$ ]]
           shell_version=$(jq -r '.shell_online_version' xray_shell_versions.json)
+          tested_version=$(jq -r '.xray_tested_version // empty' xray_shell_versions.json)
+          [[ "$tested_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           shell_sha=$(jq -r '.shell_release_sha256' xray_shell_versions.json)
           shell_commit=$(jq -r --arg version "$shell_version" '[.baselines[] | select(.version == $version) | .commit] | if length == 1 then .[0] else empty end' compatibility-baselines.json)
           baseline_sha=$(jq -r --arg version "$shell_version" '[.baselines[] | select(.version == $version) | .installSha256] | if length == 1 then .[0] else empty end' compatibility-baselines.json)
@@ -102,6 +105,7 @@ jobs:
             echo "candidate_sha=$CANDIDATE_SHA"
             echo "shell_commit=$shell_commit"
             echo "shell_sha=$shell_sha"
+            echo "tested_version=$tested_version"
           } >> "$GITHUB_OUTPUT"
 
   qualify:
@@ -199,17 +203,20 @@ jobs:
           BASE_VERSION: ${{ needs.inputs.outputs.base_version }}
           BASE_REF: ${{ needs.inputs.outputs.base_ref }}
           BASE_SHA: ${{ needs.inputs.outputs.base_sha }}
+          TESTED_VERSION: ${{ needs.inputs.outputs.tested_version }}
         run: |
           set -euo pipefail
           mkdir -p evidence
           gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" | jq '[.[].jobs[]]' > "$RUNNER_TEMP/jobs.json"
           jq -n --arg v "$CANDIDATE_VERSION" --arg ref "$CANDIDATE_REF" --arg sha "$CANDIDATE_SHA" \
             '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha}' > "$RUNNER_TEMP/candidate.json"
-          jq -n --arg v "$BASE_VERSION" --arg ref "$BASE_REF" --arg sha "$BASE_SHA" \
-            '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha}' > "$RUNNER_TEMP/base.json"
+          jq -n --arg v "$BASE_VERSION" --arg ref "$BASE_REF" --arg sha "$BASE_SHA" --arg tested "$TESTED_VERSION" \
+            '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha,testedVersion:$tested}' > "$RUNNER_TEMP/base.json"
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --pattern "qualification-binary-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-*" --dir "$RUNNER_TEMP/binaries"
           python3 .github/scripts/collect_qualification_evidence.py \
             --baselines compatibility-baselines.json --jobs "$RUNNER_TEMP/jobs.json" \
-            --candidate "$RUNNER_TEMP/candidate.json" --base "$RUNNER_TEMP/base.json" --output evidence/compatibility.json \
+            --candidate "$RUNNER_TEMP/candidate.json" --base "$RUNNER_TEMP/base.json" --binaries "$RUNNER_TEMP/binaries" --output evidence/compatibility.json \
             --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --commit "$GITHUB_SHA"
       - uses: actions/upload-artifact@v4
         with:

@@ -12,7 +12,7 @@ MODES = ('xtls_only', 'ws_grpc_xhttp', 'reality', 'reality_nginx', 'tls')
 INSTALLER_SCENARIOS = ('fresh', 'reinstall', 'remove')
 
 
-def collect(baselines, jobs, candidate, base, run_id, commit, attempt):
+def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt):
     if baselines.get('schemaVersion') != 1 or not baselines.get('baselines'):
         raise ValueError('missing baselines')
     if not re.fullmatch(r'[0-9a-f]{40}', commit) or run_id < 1 or attempt < 1:
@@ -24,12 +24,13 @@ def collect(baselines, jobs, candidate, base, run_id, commit, attempt):
                 raise ValueError('invalid candidate or base')
     entries = []
     versions = set()
-    for base in baselines['baselines']:
-        version = base['version']
+    observed = {}
+    for baseline in baselines['baselines']:
+        version = baseline['version']
         if version in versions or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version):
             raise ValueError('invalid or duplicate baseline')
         versions.add(version)
-        if not re.fullmatch(r'[0-9a-f]{40}', base['commit']) or not re.fullmatch(r'[0-9a-f]{64}', base['installSha256']):
+        if not re.fullmatch(r'[0-9a-f]{40}', baseline['commit']) or not re.fullmatch(r'[0-9a-f]{64}', baseline['installSha256']):
             raise ValueError('invalid baseline identity')
         scenarios = {}
         for key, scenario in SCENARIOS.items():
@@ -40,11 +41,24 @@ def collect(baselines, jobs, candidate, base, run_id, commit, attempt):
             job_id = matching[0].get('id')
             if not isinstance(job_id, int) or isinstance(job_id, bool) or job_id < 1:
                 raise ValueError(f'invalid job identity: {name}')
+            fact_key = f'{version}-{scenario}'
+            fact = facts.get(fact_key, {})
+            expected_version = (base.get('testedVersion') if key == 'fallback' else
+                                base['xrayVersion'] if key == 'failure-recovery' else candidate['xrayVersion'])
+            if (fact.get('version') != expected_version or
+                    not re.fullmatch(r'[0-9a-f]{64}', str(fact.get('sha256', ''))) or
+                    fact.get('arch') not in ('x86_64', 'aarch64')):
+                raise ValueError(f'missing or invalid binary evidence: {fact_key}')
+            identity = (fact['version'], fact['arch'])
+            if identity in observed and observed[identity] != fact['sha256']:
+                raise ValueError(f'inconsistent binary bytes: {fact_key}')
+            observed[identity] = fact['sha256']
             scenarios[key] = {'conclusion': 'success', 'runId': run_id, 'jobId': job_id, 'job': name,
+                              'binary': fact,
                               'environment': {'runner': 'ubuntu-latest', 'mode': 'reality',
                                               'coverage': 'direct-fallback-function' if key == 'fallback' else 'production-entry'}}
-        entries.append({'version': version, 'commit': base['commit'],
-                        'installSha256': base['installSha256'], 'scenarios': scenarios})
+        entries.append({'version': version, 'commit': baseline['commit'],
+                        'installSha256': baseline['installSha256'], 'scenarios': scenarios})
     modes = []
     for mode in MODES:
         name = f'Full install ({mode})'
@@ -76,9 +90,16 @@ def main():
     p.add_argument('--run-id', type=int, required=True)
     p.add_argument('--attempt', type=int, required=True)
     p.add_argument('--commit', required=True)
+    p.add_argument('--binaries', type=Path, required=True)
     a = p.parse_args()
     baselines, jobs, candidate, base = (json.loads(path.read_text()) for path in (a.baselines, a.jobs, a.candidate, a.base))
-    evidence = collect(baselines, jobs, candidate, base, a.run_id, a.commit, a.attempt)
+    facts = {}
+    for baseline in baselines['baselines']:
+        for scenario in SCENARIOS.values():
+            key = f"{baseline['version']}-{scenario}"
+            artifact = a.binaries / f'qualification-binary-{a.run_id}-{a.attempt}-{key}' / 'xray-binary.json'
+            facts[key] = json.loads(artifact.read_text())
+    evidence = collect(baselines, jobs, candidate, base, facts, a.run_id, a.commit, a.attempt)
     with a.output.open('x') as f:
         json.dump(evidence, f, sort_keys=True, indent=2)
         f.write('\n')
