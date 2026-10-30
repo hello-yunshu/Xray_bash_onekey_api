@@ -7,9 +7,9 @@ workflow=${repo}/.github/workflows/watch-upstreams.yml
 
 grep -Fq 'qualify-xray-fresh:' "${workflow}"
 grep -Fq 'qualify-xray-upgrade:' "${workflow}"
-grep -Fq 'needs: [discover, qualify-xray-fresh, qualify-xray-upgrade, compatibility-release-gate]' "${workflow}"
+grep -Fq 'needs: [discover, compatibility-release-gate]' "${workflow}"
 grep -Fq 'uses: ./.github/workflows/qualify-legacy-upgrade.yml' "${workflow}"
-[[ $(grep -Fc "needs.compatibility-release-gate.result == 'success'" "${workflow}") -eq 2 ]]
+[[ $(grep -Fc "needs.compatibility-release-gate.result == 'success'" "${workflow}") -eq 1 ]]
 
 for mode in xtls_only ws_grpc_xhttp reality reality_nginx tls; do
     grep -Fq -- "- ${mode}" "${workflow}"
@@ -26,7 +26,7 @@ fi
 
 grep -Fq "test_installer_candidate_smoke.sh '\${{ matrix.scenario }}'" "${workflow}"
 grep -Fq "test_install.sh '\${{ matrix.mode }}'" "${workflow}"
-grep -Fq "needs.qualify-xray-fresh.result == 'success'" "${workflow}"
-grep -Fq "needs.qualify-xray-upgrade.result == 'success'" "${workflow}"
+grep -Fq "stage_candidate_metadata.py" "${workflow}"
+grep -Fq "exit 1" "${workflow}"
 
 echo 'watch-upstreams workflow contract passed'

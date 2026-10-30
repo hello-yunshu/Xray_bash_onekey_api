@@ -142,59 +142,49 @@ jobs:
           echo 'Full evidence generation, verification and immutable release publication are not wired yet.' >&2
           exit 1
 
-  promote-xray:
-    needs: [discover, qualify-xray-fresh, qualify-xray-upgrade, compatibility-release-gate]
+  promote-paired:
+    needs: [discover, compatibility-release-gate]
     if: >-
-      needs.discover.outputs.xray_changed == '1' &&
       needs.compatibility-release-gate.result == 'success' &&
-      needs.qualify-xray-fresh.result == 'success' &&
-      needs.qualify-xray-upgrade.result == 'success'
+      (needs.discover.outputs.xray_changed == '1' || needs.discover.outputs.installer_changed == '1')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v5
-      - name: Promote only the verified Xray candidate
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Stage paired candidate only against unchanged baseline
         env:
-          CANDIDATE_GATE: PASS
-          MAIN_REPO_SHA: ${{ needs.discover.outputs.main_sha }}
-          EXPECTED_MAIN_SHA: ${{ needs.discover.outputs.main_sha }}
+          BASE_VERSION: ${{ needs.discover.outputs.current_xray_version }}
+          BASE_REF: ${{ needs.discover.outputs.current_installer_ref }}
+          BASE_SHA: ${{ needs.discover.outputs.current_installer_sha }}
+          CANDIDATE_VERSION: ${{ needs.discover.outputs.candidate_version }}
+          CANDIDATE_REF: ${{ needs.discover.outputs.installer_candidate_ref }}
+          CANDIDATE_SHA: ${{ needs.discover.outputs.installer_candidate_sha }}
         run: |
-          bash .github/scripts/promote_verified_candidate.sh \
-            xray '${{ needs.discover.outputs.candidate_version }}'
-      - name: Commit atomic Xray promotion
-        run: |
+          set -euo pipefail
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          jq -n --arg v "$BASE_VERSION" --arg ref "$BASE_REF" --arg sha "$BASE_SHA" \
+            '{xray_online_version:$v,xray_installer_ref:$ref,xray_installer_sha256:$sha}' > "$tmp/expected.json"
+          jq -n --arg v "$CANDIDATE_VERSION" --arg ref "$CANDIDATE_REF" --arg sha "$CANDIDATE_SHA" \
+            '{xray_online_version:$v,xray_installer_ref:$ref,xray_installer_sha256:$sha}' > "$tmp/candidate.json"
+          python3 .github/scripts/stage_candidate_metadata.py \
+            --current xray_shell_versions.json --expected "$tmp/expected.json" \
+            --candidate "$tmp/candidate.json" --output "$tmp/staged.json"
+          mv "$tmp/staged.json" xray_shell_versions.json
+          bash validate-json.sh
+          if git diff --quiet -- xray_shell_versions.json; then
+            echo 'Paired metadata is already current'
+            exit 0
+          fi
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add xray_shell_versions.json
-          git commit -m "promote(xray): ${{ needs.discover.outputs.candidate_version }}"
+          git commit -m "promote(xray): paired candidate $CANDIDATE_VERSION"
+          # A competing main update causes a non-fast-forward failure. Never
+          # force-push or blindly rebase an already-qualified candidate.
           git push origin HEAD:main
-
-  promote-installer:
-    needs: [discover, qualify-xray-fresh, qualify-xray-upgrade, qualify-installer, promote-xray, compatibility-release-gate]
-    if: >-
-      always() && needs.discover.outputs.installer_changed == '1' &&
-      needs.compatibility-release-gate.result == 'success' &&
-      needs.qualify-installer.result == 'success' &&
-      (needs.discover.outputs.xray_changed != '1' ||
-       needs.qualify-xray-fresh.result != 'success' ||
-       needs.qualify-xray-upgrade.result != 'success' ||
-       needs.promote-xray.result == 'success' ||
-       needs.promote-xray.result == 'failure')
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Promote only the verified installer candidate
-        env:
-          CANDIDATE_GATE: PASS
-          MAIN_REPO_SHA: ${{ needs.discover.outputs.main_sha }}
-          EXPECTED_MAIN_SHA: ${{ needs.discover.outputs.main_sha }}
-          INSTALLER_SHA256: ${{ needs.discover.outputs.installer_candidate_sha }}
-        run: |
-          bash .github/scripts/promote_verified_candidate.sh \
-            installer '${{ needs.discover.outputs.installer_candidate_ref }}'
-      - name: Commit atomic installer promotion
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add xray_shell_versions.json
-          git commit -m "promote(xray-install): ${{ needs.discover.outputs.installer_candidate_ref }}"
-          git push origin HEAD:main
+          curl -fsS 'https://purge.jsdelivr.net/gh/hello-yunshu/Xray_bash_onekey_api@main/xray_shell_versions.json' >/dev/null || true
