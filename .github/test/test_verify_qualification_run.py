@@ -4,8 +4,10 @@ import json
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+import sys
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / '.github/scripts'))
 spec = importlib.util.spec_from_file_location('qualification', ROOT / '.github/scripts/verify_qualification_run.py')
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
@@ -18,10 +20,10 @@ class RunVerificationTests(unittest.TestCase):
         self.run = {'id': 11, 'head_sha': self.sha, 'path': '.github/workflows/qualify-release.yml',
                     'event': 'workflow_dispatch', 'status': 'completed', 'conclusion': 'success',
                     'run_attempt': 2, 'repository': {'full_name': self.repo}}
-        self.jobs = [{'id': 44, 'name': 'qualify / legacy-upgrade (3.2.9)', 'status': 'completed', 'conclusion': 'success'}]
+        self.jobs = [{'id': 44, 'name': 'qualify / Legacy upgrade (3.2.9, direct)', 'status': 'completed', 'conclusion': 'success'}]
         self.artifacts = [{'name': 'qualification-evidence-11-2', 'expired': False}]
-        self.evidence = json.dumps({'baselines': [{'version': '3.2.9', 'scenarios': {'legacy-upgrade':
-                       {'runId': 11, 'jobId': 44, 'job': 'qualify / legacy-upgrade (3.2.9)'}}}]}).encode()
+        self.evidence = json.dumps({'qualificationCommit': self.sha, 'runAttempt': 2, 'baselines': [{'version': '3.2.9', 'scenarios': {'legacy-upgrade':
+                       {'runId': 11, 'jobId': 44, 'job': 'qualify / Legacy upgrade (3.2.9, direct)'}}}]}).encode()
 
     def verify(self):
         def api(path):

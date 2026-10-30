@@ -10,6 +10,7 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path
+from collect_qualification_evidence import SCENARIOS
 
 
 def api(path):
@@ -28,6 +29,8 @@ def verify(evidence_bytes, repo, run_id, trusted_sha, attempt):
             run.get('repository', {}).get('full_name') != repo):
         raise ValueError('untrusted or incomplete qualification run')
     evidence = json.loads(evidence_bytes)
+    if evidence.get('qualificationCommit') != trusted_sha or evidence.get('runAttempt') != attempt:
+        raise ValueError('qualification evidence identity mismatch')
     jobs = []
     page = 1
     while True:
@@ -42,7 +45,9 @@ def verify(evidence_bytes, repo, run_id, trusted_sha, attempt):
         if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version):
             raise ValueError('invalid baseline version')
         for scenario, result in baseline['scenarios'].items():
-            expected_name = f'qualify / {scenario} ({version})'
+            if scenario not in SCENARIOS:
+                raise ValueError('unknown qualification scenario')
+            expected_name = f'qualify / Legacy upgrade ({version}, {SCENARIOS[scenario]})'
             job_id = result.get('jobId')
             if result.get('job') != expected_name or result.get('runId') != run_id or not isinstance(job_id, int) or isinstance(job_id, bool):
                 raise ValueError('scenario references a different run or invalid job')

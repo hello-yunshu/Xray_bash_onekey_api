@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""Collect exact job results; workflow trust and candidate inputs are caller-owned."""
+import argparse
+import json
+import re
+from pathlib import Path
+
+SCENARIOS = {'fresh': 'fresh', 'legacy-upgrade': 'direct',
+             'shell-then-upgrade': 'shell-first', 'reinstall': 'reinstall',
+             'failure-recovery': 'failure-recovery', 'fallback': 'fallback'}
+
+
+def collect(baselines, jobs, candidate, run_id, commit, attempt):
+    if baselines.get('schemaVersion') != 1 or not baselines.get('baselines'):
+        raise ValueError('missing baselines')
+    if not re.fullmatch(r'[0-9a-f]{40}', commit) or run_id < 1 or attempt < 1:
+        raise ValueError('invalid qualification identity')
+    for field, pattern in (('xrayVersion', r'[0-9]+\.[0-9]+\.[0-9]+'),
+                           ('installerRef', r'[0-9a-f]{40}'), ('installerSha256', r'[0-9a-f]{64}')):
+        if not isinstance(candidate.get(field), str) or not re.fullmatch(pattern, candidate[field]):
+            raise ValueError('invalid candidate')
+    entries = []
+    versions = set()
+    for base in baselines['baselines']:
+        version = base['version']
+        if version in versions or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version):
+            raise ValueError('invalid or duplicate baseline')
+        versions.add(version)
+        if not re.fullmatch(r'[0-9a-f]{40}', base['commit']) or not re.fullmatch(r'[0-9a-f]{64}', base['installSha256']):
+            raise ValueError('invalid baseline identity')
+        scenarios = {}
+        for key, scenario in SCENARIOS.items():
+            name = f'qualify / Legacy upgrade ({version}, {scenario})'
+            matching = [job for job in jobs if job.get('name') == name]
+            if len(matching) != 1 or matching[0].get('status') != 'completed' or matching[0].get('conclusion') != 'success':
+                raise ValueError(f'missing or unsuccessful job: {name}')
+            job_id = matching[0].get('id')
+            if not isinstance(job_id, int) or isinstance(job_id, bool) or job_id < 1:
+                raise ValueError(f'invalid job identity: {name}')
+            scenarios[key] = {'conclusion': 'success', 'runId': run_id, 'jobId': job_id, 'job': name,
+                              'environment': {'runner': 'ubuntu-latest', 'mode': 'reality',
+                                              'coverage': 'direct-fallback-function' if key == 'fallback' else 'production-entry'}}
+        entries.append({'version': version, 'commit': base['commit'],
+                        'installSha256': base['installSha256'], 'scenarios': scenarios})
+    return {'schemaVersion': 1, 'candidate': candidate, 'qualificationCommit': commit,
+            'runAttempt': attempt, 'baselines': entries}
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    for arg in ('baselines', 'jobs', 'candidate', 'output'):
+        p.add_argument('--' + arg, type=Path, required=True)
+    p.add_argument('--run-id', type=int, required=True)
+    p.add_argument('--attempt', type=int, required=True)
+    p.add_argument('--commit', required=True)
+    a = p.parse_args()
+    baselines, jobs, candidate = (json.loads(path.read_text()) for path in (a.baselines, a.jobs, a.candidate))
+    evidence = collect(baselines, jobs, candidate, a.run_id, a.commit, a.attempt)
+    with a.output.open('x') as f:
+        json.dump(evidence, f, sort_keys=True, indent=2)
+        f.write('\n')
+
+
+if __name__ == '__main__':
+    main()
