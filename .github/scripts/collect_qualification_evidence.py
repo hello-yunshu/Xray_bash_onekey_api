@@ -54,10 +54,15 @@ def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt):
             if identity in observed and observed[identity] != fact['sha256']:
                 raise ValueError(f'inconsistent binary bytes: {fact_key}')
             observed[identity] = fact['sha256']
+            coverage = 'production-entry'
+            if key == 'fallback':
+                coverage = 'direct-fallback-function'
+            elif key == 'legacy-upgrade' and base['xrayVersion'] == candidate['xrayVersion']:
+                coverage = 'same-version-reinstall'
             scenarios[key] = {'conclusion': 'success', 'runId': run_id, 'jobId': job_id, 'job': name,
                               'binary': fact,
                               'environment': {'runner': 'ubuntu-latest', 'mode': 'reality',
-                                              'coverage': 'direct-fallback-function' if key == 'fallback' else 'production-entry'}}
+                                              'coverage': coverage}}
         entries.append({'version': version, 'commit': baseline['commit'],
                         'installSha256': baseline['installSha256'], 'scenarios': scenarios})
     modes = []

@@ -34,6 +34,7 @@ class CollectionTests(unittest.TestCase):
         result = self.collect()
         self.assertEqual(len(result['baselines'][0]['scenarios']), 6)
         self.assertEqual(result['baselines'][0]['scenarios']['fallback']['environment']['coverage'], 'direct-fallback-function')
+        self.assertEqual(result['baselines'][0]['scenarios']['legacy-upgrade']['environment']['coverage'], 'same-version-reinstall')
 
     def test_fails_closed_for_failure_missing_or_duplicate_job(self):
         self.jobs[0]['conclusion'] = 'failure'
