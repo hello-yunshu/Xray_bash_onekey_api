@@ -95,8 +95,9 @@ if [[ $scenario == failure-recovery ]]; then
     exit 0
 fi
 if [[ $scenario == restart-recovery ]]; then
-    # A real systemd pre-start hook fails exactly once, then allows rollback to
-    # start the previous binary. No historical shell functions are patched.
+    # A real systemd pre-start hook rejects candidate starts while the local
+    # backup exists. Layer 1 moves that backup back into place, after which a
+    # start can succeed. No historical shell functions are patched.
     original_binary=$(sha256sum /usr/local/bin/xray | awk '{print $1}')
     marker=$(mktemp /tmp/xray-restart-failure.XXXXXX)
     chmod 666 "$marker"
@@ -104,7 +105,7 @@ if [[ $scenario == restart-recovery ]]; then
     cat > /etc/systemd/system/xray.service.d/qualification-fail-once.conf <<EOF
 [Service]
 Restart=no
-ExecStartPre=/bin/sh -c 'if [ ! -s $marker ]; then echo failed > $marker; exit 1; fi'
+ExecStartPre=+/bin/sh -c 'if [ -f /etc/idleleo/tmp/xray.prev ]; then echo failed > $marker; exit 1; fi'
 EOF
     systemctl daemon-reload
     if XRAY_CANDIDATE_VERSION="$candidate" XRAY_CANDIDATE_INSTALLER_REF="$candidate_ref" \
