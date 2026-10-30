@@ -13,6 +13,12 @@
       "tag": "v3.2.10",
       "commit": "3e04a44685aeacb8a55a2f69023a66eaef84b9b9",
       "installSha256": "9323a226e0241f2e3d9229f607b6a9ef68e59697634d8ce0e6a8f4d1001c2e60"
+    },
+    {
+      "version": "3.2.11",
+      "tag": "v3.2.11",
+      "commit": "6c7aff36c22c5b4f06d9f681f19cc3ab20f707ba",
+      "installSha256": "fb14ae7d45a18d7fdd070830b539e55512af8b60433aaa74cf005ed1de0a601d"
     }
   ]
 }
