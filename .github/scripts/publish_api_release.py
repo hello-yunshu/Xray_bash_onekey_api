@@ -41,7 +41,7 @@ def source_file(path, sha):
     return json.loads(base64.b64decode(response['content'], validate=False))
 
 
-def publish(tag, evidence_path, expected_path, candidate_path, run_id, attempt):
+def publish(tag, evidence_path, expected_path, candidate_path, run_id, attempt, tested_metadata_path=None):
     if not re.fullmatch(r'api-[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]+', tag):
         raise ValueError('invalid API release tag')
     ref = api(f'repos/{REPO}/git/ref/heads/main')['object']
@@ -60,6 +60,15 @@ def publish(tag, evidence_path, expected_path, candidate_path, run_id, attempt):
         raise ValueError('qualification base differs from promotion baseline')
     if base.get('testedVersion') != current.get('xray_tested_version'):
         raise ValueError('qualified fallback version differs from production metadata')
+    if tested_metadata_path is not None:
+        proposed = json.loads(Path(tested_metadata_path).read_text())
+        allowed = {'xray_tested_version', 'xray_tested_at', 'xray_tested_note'}
+        if ({k: v for k, v in metadata.items() if k not in allowed} !=
+                {k: v for k, v in proposed.items() if k not in allowed}):
+            raise ValueError('fallback promotion changed unrelated metadata')
+        if evidence.get('candidate', {}).get('testedVersion') != proposed.get('xray_tested_version'):
+            raise ValueError('fallback candidate differs from proposed metadata')
+        metadata = proposed
     # Validation of complete scenario coverage and candidate equality comes
     # before remote release lookup or any write operation.
     files = prepare_api_release.prepare(metadata, evidence, baselines)
@@ -92,10 +101,11 @@ def main():
         parser.add_argument('--' + name, type=Path, required=True)
     parser.add_argument('--run-id', type=int, required=True)
     parser.add_argument('--attempt', type=int, required=True)
+    parser.add_argument('--tested-metadata', type=Path)
     args = parser.parse_args()
     if args.run_id < 1 or args.attempt < 1:
         raise ValueError('invalid run identity')
-    publish(args.tag, args.evidence, args.expected, args.candidate, args.run_id, args.attempt)
+    publish(args.tag, args.evidence, args.expected, args.candidate, args.run_id, args.attempt, args.tested_metadata)
 
 
 if __name__ == '__main__':

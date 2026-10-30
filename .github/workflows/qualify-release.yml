@@ -84,11 +84,10 @@ jobs:
           BASE_VERSION=${BASE_VERSION:-26.3.27}
           BASE_REF=${BASE_REF:-e741a4f56d368afbb9e5be3361b40c4552d3710d}
           BASE_SHA=${BASE_SHA:-7f70c95f6b418da8b4f4883343d602964915e28748993870fd554383afdbe555}
-          # Exercise the positive evidence path in PRs using an older pinned
-          # tuple. The separate legacy workflow still tests today's API tuple
-          # and exposes its known 3.2.9 failures. Production dispatch never
-          # uses these fixture defaults.
-          CANDIDATE_VERSION=${CANDIDATE_VERSION:-$BASE_VERSION}
+          # PRs test an actual version change with the historical installer;
+          # the separate legacy workflow also checks the known incompatible
+          # current installer. Production dispatch never uses these defaults.
+          CANDIDATE_VERSION=${CANDIDATE_VERSION:-26.10.29}
           CANDIDATE_REF=${CANDIDATE_REF:-$BASE_REF}
           CANDIDATE_SHA=${CANDIDATE_SHA:-$BASE_SHA}
           [[ "$BASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$CANDIDATE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
@@ -97,6 +96,9 @@ jobs:
           shell_version=$(jq -r '.shell_online_version' xray_shell_versions.json)
           tested_version=$(jq -r '.xray_tested_version // empty' xray_shell_versions.json)
           [[ "$tested_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            CANDIDATE_TESTED_VERSION=${CANDIDATE_TESTED_VERSION:-26.3.27}
+          fi
           CANDIDATE_TESTED_VERSION=${CANDIDATE_TESTED_VERSION:-$tested_version}
           [[ "$CANDIDATE_TESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           shell_sha=$(jq -r '.shell_release_sha256' xray_shell_versions.json)

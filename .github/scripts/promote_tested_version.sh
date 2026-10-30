@@ -673,7 +673,12 @@ promote_component() {
 
   # --- Update tested_versions.json (single component only) ---
   local updated_at
-  updated_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  updated_at=${PROMOTION_TIMESTAMP:-$(date -u '+%Y-%m-%dT%H:%M:%SZ')}
+  if ! printf '%s' "$updated_at" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'; then
+    echo "ERROR: invalid promotion timestamp" >&2
+    rm -f "$snap_tested" "$snap_versions"
+    return 1
+  fi
 
   if ! "$JQ_BIN" --arg c "$component" --arg v "$version" \
      '.[$c] = $v' "$tested_file" > "${tested_file}.tmp" 2>/dev/null; then

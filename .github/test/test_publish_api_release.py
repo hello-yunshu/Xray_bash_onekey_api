@@ -114,6 +114,41 @@ class PublishTests(unittest.TestCase):
             exists.assert_not_called()
             run.assert_not_called()
 
+    def test_fallback_snapshot_rejects_unrelated_changes(self):
+        evidence = json.loads((self.path / 'evidence').read_text())
+        evidence['candidate'] = {'testedVersion': '26.3.27'}
+        (self.path / 'evidence').write_text(json.dumps(evidence))
+        proposed = dict(self.old, xray_tested_version='26.3.27', extra='unexpected')
+        (self.path / 'proposed').write_text(json.dumps(proposed))
+        (self.path / 'candidate').write_text(json.dumps(self.old))
+        with patch.object(module, 'api', return_value=self.ref), \
+             patch.object(module, 'source_file', side_effect=[self.old, {}]), \
+             patch.object(module, 'exists') as exists:
+            with self.assertRaisesRegex(ValueError, 'unrelated metadata'):
+                module.publish('api-2026.10.30.1', self.path / 'evidence', self.path / 'expected',
+                               self.path / 'candidate', 100, 1, self.path / 'proposed')
+            exists.assert_not_called()
+
+    def test_fallback_snapshot_is_published_before_metadata_promotion(self):
+        evidence = json.loads((self.path / 'evidence').read_text())
+        evidence['candidate'] = {'testedVersion': '26.3.27'}
+        (self.path / 'evidence').write_text(json.dumps(evidence))
+        proposed = dict(self.old, xray_tested_version='26.3.27', xray_tested_at='2026-10-30T10:00:00Z')
+        (self.path / 'proposed').write_text(json.dumps(proposed))
+        (self.path / 'candidate').write_text(json.dumps(self.old))
+        with patch.object(module, 'api', return_value=self.ref), \
+             patch.object(module, 'source_file', side_effect=[self.old, {}]), \
+             patch.object(module.prepare_api_release, 'prepare', return_value={'compatibility.json': b'{}', 'xray_shell_versions.json': b'{}'}) as prepare, \
+             patch.object(module.verify_qualification_run, 'verify'), \
+             patch.object(module, 'exists', side_effect=[False, False]), \
+             patch.object(module.verify_api_release, 'verify') as verify, \
+             patch.object(module.subprocess, 'run') as run:
+            module.publish('api-2026.10.30.1', self.path / 'evidence', self.path / 'expected',
+                           self.path / 'candidate', 100, 1, self.path / 'proposed')
+            self.assertEqual(prepare.call_args.args[0], proposed)
+            run.assert_called_once()
+            verify.assert_called_once()
+
 
 if __name__ == '__main__':
     unittest.main()
