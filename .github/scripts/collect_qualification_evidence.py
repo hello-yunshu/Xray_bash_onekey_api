@@ -55,10 +55,18 @@ def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt):
                     not re.fullmatch(r'[0-9a-f]{64}', str(fact.get('sha256', ''))) or
                     fact.get('arch') not in ('x86_64', 'aarch64')):
                 raise ValueError(f'missing or invalid binary evidence: {fact_key}')
+            archive = fact.get('referenceArchive', {})
+            archive_name = {'x86_64': 'Xray-linux-64.zip', 'aarch64': 'Xray-linux-arm64-v8a.zip'}[fact['arch']]
+            if archive.get('name') != archive_name or not re.fullmatch(r'[0-9a-f]{64}', str(archive.get('sha256', ''))):
+                raise ValueError(f'missing or invalid reference archive: {fact_key}')
             identity = (fact['version'], fact['arch'])
             if identity in observed and observed[identity] != fact['sha256']:
                 raise ValueError(f'inconsistent binary bytes: {fact_key}')
             observed[identity] = fact['sha256']
+            archive_identity = ('archive', *identity)
+            if archive_identity in observed and observed[archive_identity] != archive['sha256']:
+                raise ValueError(f'inconsistent reference archive: {fact_key}')
+            observed[archive_identity] = archive['sha256']
             coverage = 'production-entry'
             if key == 'fallback':
                 coverage = 'direct-fallback-function'

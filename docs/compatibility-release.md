@@ -10,7 +10,9 @@ change the optimistic concurrency baseline for publication.
 `qualify-release.yml`. The qualification runs real released Shell scripts on
 systemd runners, plus the full install modes, installer smoke tests and minimal
 bootstrap checks. The evidence describes the actual paths and environments;
-the fallback check invokes the historical fallback function directly. A
+it records the installed binary hash and the hash of a separately downloaded
+architecture-specific reference archive whose binary matches it. The fallback
+check invokes the historical fallback function directly. A
 failed or missing required job prevents publication and promotion. A repeated
 run for the current pair does not create a new Release or Shell version.
 

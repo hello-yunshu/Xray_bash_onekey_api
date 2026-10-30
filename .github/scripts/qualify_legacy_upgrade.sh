@@ -19,12 +19,32 @@ log=$(mktemp)
 trap 'rm -f "$log"' EXIT
 record_binary() {
     [[ -n ${QUALIFICATION_BINARY_EVIDENCE:-} ]] || return 0
-    local installed digest arch
+    local installed digest arch asset temp archive_sha extracted_sha
     installed=$(/usr/local/bin/xray version | awk 'NR==1 {sub(/^v/, "", $2); print $2}')
     digest=$(sha256sum /usr/local/bin/xray | awk '{print $1}')
     arch=$(uname -m)
+    case "$arch" in
+        x86_64) asset=Xray-linux-64.zip ;;
+        aarch64) asset=Xray-linux-arm64-v8a.zip ;;
+        *) echo 'Unsupported qualification architecture' >&2; return 1 ;;
+    esac
+    temp=$(mktemp -d)
+    if ! curl -fsSL --retry 3 --connect-timeout 15 --max-time 180 \
+        "https://github.com/XTLS/Xray-core/releases/download/v${installed}/${asset}" -o "$temp/$asset"; then
+        rm -rf "$temp"
+        return 1
+    fi
+    archive_sha=$(sha256sum "$temp/$asset" | awk '{print $1}')
+    if ! unzip -p "$temp/$asset" xray > "$temp/xray"; then
+        rm -rf "$temp"
+        return 1
+    fi
+    extracted_sha=$(sha256sum "$temp/xray" | awk '{print $1}')
+    rm -rf "$temp"
+    [[ "$extracted_sha" == "$digest" ]] || { echo 'Installed binary differs from the published reference archive' >&2; return 1; }
     jq -n --arg version "$installed" --arg sha256 "$digest" --arg arch "$arch" \
-        '{version:$version,sha256:$sha256,arch:$arch}' > "$QUALIFICATION_BINARY_EVIDENCE"
+        --arg asset "$asset" --arg asset_sha "$archive_sha" \
+        '{version:$version,sha256:$sha256,arch:$arch,referenceArchive:{name:$asset,sha256:$asset_sha}}' > "$QUALIFICATION_BINARY_EVIDENCE"
 }
 diagnose() {
     # Only print fixed classifications; raw installer logs can contain secrets.

@@ -16,7 +16,8 @@ class CollectionTests(unittest.TestCase):
         self.candidate = {'xrayVersion': '26.10.29', 'installerRef': 'c' * 40, 'installerSha256': 'd' * 64}
         self.base = dict(self.candidate, testedVersion='25.12.8')
         self.facts = {f'3.2.9-{scenario}': {'version': ('25.12.8' if scenario == 'fallback' else '26.10.29'),
-                      'sha256': ('f' * 64 if scenario == 'fallback' else 'a' * 64), 'arch': 'x86_64'}
+                      'sha256': ('f' * 64 if scenario == 'fallback' else 'a' * 64), 'arch': 'x86_64',
+                      'referenceArchive': {'name': 'Xray-linux-64.zip', 'sha256': 'b' * 64}}
                       for scenario in module.SCENARIOS.values()}
         self.jobs = [{'name': f'qualify / Legacy upgrade (3.2.9, {scenario})', 'status': 'completed',
                       'conclusion': 'success', 'id': i + 1} for i, scenario in enumerate(module.SCENARIOS.values())]
@@ -58,7 +59,8 @@ class CollectionTests(unittest.TestCase):
         del self.facts['3.2.9-direct']
         with self.assertRaisesRegex(ValueError, 'binary evidence'):
             self.collect()
-        self.facts['3.2.9-direct'] = {'version': '26.10.29', 'sha256': 'd' * 64, 'arch': 'x86_64'}
+        self.facts['3.2.9-direct'] = {'version': '26.10.29', 'sha256': 'd' * 64, 'arch': 'x86_64',
+                                     'referenceArchive': {'name': 'Xray-linux-64.zip', 'sha256': 'b' * 64}}
         with self.assertRaisesRegex(ValueError, 'inconsistent binary'):
             self.collect()
 
@@ -79,6 +81,14 @@ class CollectionTests(unittest.TestCase):
             self.collect()
         self.facts['3.2.9-fallback']['version'] = '26.3.27'
         self.collect()
+
+    def test_rejects_missing_or_inconsistent_reference_archive(self):
+        self.facts['3.2.9-direct']['referenceArchive']['sha256'] = 'c' * 64
+        with self.assertRaisesRegex(ValueError, 'inconsistent reference archive'):
+            self.collect()
+        del self.facts['3.2.9-direct']['referenceArchive']
+        with self.assertRaisesRegex(ValueError, 'reference archive'):
+            self.collect()
 
 
 if __name__ == '__main__':
