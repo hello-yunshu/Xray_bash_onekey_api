@@ -49,6 +49,8 @@ jobs:
       candidate_version: ${{ steps.resolve.outputs.candidate_version }}
       candidate_ref: ${{ steps.resolve.outputs.candidate_ref }}
       candidate_sha: ${{ steps.resolve.outputs.candidate_sha }}
+      shell_commit: ${{ steps.resolve.outputs.shell_commit }}
+      shell_sha: ${{ steps.resolve.outputs.shell_sha }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -73,6 +75,12 @@ jobs:
           [[ "$BASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$CANDIDATE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           [[ "$BASE_REF" =~ ^[0-9a-f]{40}$ && "$CANDIDATE_REF" =~ ^[0-9a-f]{40}$ ]]
           [[ "$BASE_SHA" =~ ^[0-9a-f]{64}$ && "$CANDIDATE_SHA" =~ ^[0-9a-f]{64}$ ]]
+          shell_version=$(jq -r '.shell_online_version' xray_shell_versions.json)
+          shell_sha=$(jq -r '.shell_release_sha256' xray_shell_versions.json)
+          shell_commit=$(jq -r --arg version "$shell_version" '[.baselines[] | select(.version == $version) | .commit] | if length == 1 then .[0] else empty end' compatibility-baselines.json)
+          baseline_sha=$(jq -r --arg version "$shell_version" '[.baselines[] | select(.version == $version) | .installSha256] | if length == 1 then .[0] else empty end' compatibility-baselines.json)
+          [[ "$shell_commit" =~ ^[0-9a-f]{40}$ && "$shell_sha" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$shell_sha" == "$baseline_sha" ]]
           {
             echo "base_version=$BASE_VERSION"
             echo "base_ref=$BASE_REF"
@@ -80,6 +88,8 @@ jobs:
             echo "candidate_version=$CANDIDATE_VERSION"
             echo "candidate_ref=$CANDIDATE_REF"
             echo "candidate_sha=$CANDIDATE_SHA"
+            echo "shell_commit=$shell_commit"
+            echo "shell_sha=$shell_sha"
           } >> "$GITHUB_OUTPUT"
 
   qualify:
@@ -95,8 +105,41 @@ jobs:
       candidate_installer_ref: ${{ needs.inputs.outputs.candidate_ref }}
       candidate_installer_sha256: ${{ needs.inputs.outputs.candidate_sha }}
 
+  full-install:
+    needs: inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [xtls_only, ws_grpc_xhttp, reality, reality_nginx, tls]
+    name: Full install (${{ matrix.mode }})
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: api
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
+          repository: hello-yunshu/Xray_bash_onekey
+          ref: ${{ needs.inputs.outputs.shell_commit }}
+          path: shell
+          persist-credentials: false
+      - name: Install candidate through released shell
+        env:
+          SHELL_SHA: ${{ needs.inputs.outputs.shell_sha }}
+          XRAY_VERSIONS_FILE: ${{ github.workspace }}/api/xray_shell_versions.json
+          XRAY_CANDIDATE_VERSION: ${{ needs.inputs.outputs.candidate_version }}
+          XRAY_CANDIDATE_INSTALLER_REF: ${{ needs.inputs.outputs.candidate_ref }}
+          XRAY_CANDIDATE_INSTALLER_SHA256: ${{ needs.inputs.outputs.candidate_sha }}
+          INSTALL_MODE: ${{ matrix.mode }}
+        run: |
+          set -euo pipefail
+          [[ $(sha256sum shell/install.sh | awk '{print $1}') == "$SHELL_SHA" ]]
+          sudo -E bash shell/.github/test/test_install.sh "$INSTALL_MODE"
+
   evidence:
-    needs: [inputs, qualify]
+    needs: [inputs, qualify, full-install]
     runs-on: ubuntu-latest
     permissions:
       contents: read

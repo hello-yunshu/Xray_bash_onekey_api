@@ -8,6 +8,7 @@ from pathlib import Path
 SCENARIOS = {'fresh': 'fresh', 'legacy-upgrade': 'direct',
              'shell-then-upgrade': 'shell-first', 'reinstall': 'reinstall',
              'failure-recovery': 'failure-recovery', 'fallback': 'fallback'}
+MODES = ('xtls_only', 'ws_grpc_xhttp', 'reality', 'reality_nginx', 'tls')
 
 
 def collect(baselines, jobs, candidate, base, run_id, commit, attempt):
@@ -43,8 +44,18 @@ def collect(baselines, jobs, candidate, base, run_id, commit, attempt):
                                               'coverage': 'direct-fallback-function' if key == 'fallback' else 'production-entry'}}
         entries.append({'version': version, 'commit': base['commit'],
                         'installSha256': base['installSha256'], 'scenarios': scenarios})
+    modes = []
+    for mode in MODES:
+        name = f'Full install ({mode})'
+        found = [job for job in jobs if job.get('name') == name]
+        if len(found) != 1 or found[0].get('status') != 'completed' or found[0].get('conclusion') != 'success':
+            raise ValueError(f'missing or unsuccessful job: {name}')
+        job_id = found[0].get('id')
+        if not isinstance(job_id, int) or isinstance(job_id, bool) or job_id < 1:
+            raise ValueError(f'invalid job identity: {name}')
+        modes.append({'mode': mode, 'runId': run_id, 'jobId': job_id, 'job': name})
     return {'schemaVersion': 1, 'candidate': candidate, 'base': base, 'qualificationCommit': commit,
-            'runAttempt': attempt, 'baselines': entries}
+            'runAttempt': attempt, 'modeJobs': modes, 'baselines': entries}
 
 
 def main():

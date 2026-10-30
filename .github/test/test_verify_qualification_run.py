@@ -21,8 +21,11 @@ class RunVerificationTests(unittest.TestCase):
                     'event': 'workflow_dispatch', 'status': 'completed', 'conclusion': 'success',
                     'run_attempt': 2, 'repository': {'full_name': self.repo}}
         self.jobs = [{'id': 44, 'name': 'qualify / Legacy upgrade (3.2.9, direct)', 'status': 'completed', 'conclusion': 'success'}]
+        self.jobs.extend({'id': 100 + i, 'name': f'Full install ({mode})', 'status': 'completed', 'conclusion': 'success'}
+                         for i, mode in enumerate(module.MODES))
         self.artifacts = [{'name': 'qualification-evidence-11-2', 'expired': False}]
-        self.evidence = json.dumps({'qualificationCommit': self.sha, 'runAttempt': 2, 'baselines': [{'version': '3.2.9', 'scenarios': {'legacy-upgrade':
+        mode_jobs = [{'mode': mode, 'job': f'Full install ({mode})', 'jobId': 100 + i, 'runId': 11} for i, mode in enumerate(module.MODES)]
+        self.evidence = json.dumps({'qualificationCommit': self.sha, 'runAttempt': 2, 'modeJobs': mode_jobs, 'baselines': [{'version': '3.2.9', 'scenarios': {'legacy-upgrade':
                        {'runId': 11, 'jobId': 44, 'job': 'qualify / Legacy upgrade (3.2.9, direct)'}}}]}).encode()
 
     def verify(self):

@@ -16,6 +16,8 @@ class CollectionTests(unittest.TestCase):
         self.candidate = {'xrayVersion': '26.10.29', 'installerRef': 'c' * 40, 'installerSha256': 'd' * 64}
         self.jobs = [{'name': f'qualify / Legacy upgrade (3.2.9, {scenario})', 'status': 'completed',
                       'conclusion': 'success', 'id': i + 1} for i, scenario in enumerate(module.SCENARIOS.values())]
+        self.jobs.extend({'name': f'Full install ({mode})', 'status': 'completed',
+                          'conclusion': 'success', 'id': i + 100} for i, mode in enumerate(module.MODES))
 
     def collect(self):
         return module.collect(self.baselines, self.jobs, self.candidate, self.candidate, 123, 'e' * 40, 1)

@@ -10,7 +10,7 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path
-from collect_qualification_evidence import SCENARIOS
+from collect_qualification_evidence import MODES, SCENARIOS
 
 
 def api(path):
@@ -40,6 +40,14 @@ def verify(evidence_bytes, repo, run_id, trusted_sha, attempt):
         if len(batch) < 100:
             break
         page += 1
+    mode_jobs = evidence.get('modeJobs')
+    if not isinstance(mode_jobs, list) or len(mode_jobs) != len(MODES) or {j.get('mode') for j in mode_jobs} != set(MODES):
+        raise ValueError('missing full installation modes')
+    for result in mode_jobs:
+        name = f"Full install ({result['mode']})"
+        matches = [job for job in jobs if job.get('id') == result.get('jobId')]
+        if result.get('runId') != run_id or result.get('job') != name or len(matches) != 1 or matches[0].get('name') != name or matches[0].get('status') != 'completed' or matches[0].get('conclusion') != 'success':
+            raise ValueError('full installation job missing or unsuccessful')
     for baseline in evidence['baselines']:
         version = baseline['version']
         if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version):
