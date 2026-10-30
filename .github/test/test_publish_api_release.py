@@ -20,12 +20,13 @@ class PublishTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.path = Path(self.tmp.name)
         self.old = {'xray_online_version': '26.3.27', 'xray_installer_ref': 'a' * 40,
-                    'xray_installer_sha256': 'b' * 64}
+                    'xray_installer_sha256': 'b' * 64, 'xray_tested_version': '25.12.8'}
         self.new = {'xray_online_version': '26.10.29', 'xray_installer_ref': 'c' * 40,
                     'xray_installer_sha256': 'd' * 64}
         evidence = {'base': {'xrayVersion': self.old['xray_online_version'],
                              'installerRef': self.old['xray_installer_ref'],
-                             'installerSha256': self.old['xray_installer_sha256']}}
+                             'installerSha256': self.old['xray_installer_sha256'],
+                             'testedVersion': self.old['xray_tested_version']}}
         for name, doc in (('expected', self.old), ('candidate', self.new), ('evidence', evidence)):
             (self.path / name).write_text(json.dumps(doc))
         self.ref = {'object': {'type': 'commit', 'sha': 'e' * 40}}
@@ -63,6 +64,18 @@ class PublishTests(unittest.TestCase):
              patch.object(module, 'source_file', side_effect=[self.old, {}]), \
              patch.object(module, 'exists') as exists, patch.object(module.subprocess, 'run') as run:
             with self.assertRaisesRegex(ValueError, 'base differs'):
+                self.call()
+            exists.assert_not_called()
+            run.assert_not_called()
+
+    def test_rejects_changed_fallback_before_release_write(self):
+        evidence = json.loads((self.path / 'evidence').read_text())
+        evidence['base']['testedVersion'] = '25.12.7'
+        (self.path / 'evidence').write_text(json.dumps(evidence))
+        with patch.object(module, 'api', return_value=self.ref), \
+             patch.object(module, 'source_file', side_effect=[self.old, {}]), \
+             patch.object(module, 'exists') as exists, patch.object(module.subprocess, 'run') as run:
+            with self.assertRaisesRegex(ValueError, 'fallback version differs'):
                 self.call()
             exists.assert_not_called()
             run.assert_not_called()

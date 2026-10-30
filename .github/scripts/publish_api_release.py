@@ -58,6 +58,8 @@ def publish(tag, evidence_path, expected_path, candidate_path, run_id, attempt):
     base = evidence.get('base', {})
     if (base.get('xrayVersion'), base.get('installerRef'), base.get('installerSha256')) != tuple(expected.get(k) for k in stage_candidate_metadata.FIELDS):
         raise ValueError('qualification base differs from promotion baseline')
+    if base.get('testedVersion') != current.get('xray_tested_version'):
+        raise ValueError('qualified fallback version differs from production metadata')
     # Validation of complete scenario coverage and candidate equality comes
     # before remote release lookup or any write operation.
     files = prepare_api_release.prepare(metadata, evidence, baselines)
