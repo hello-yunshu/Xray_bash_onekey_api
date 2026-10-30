@@ -10,7 +10,7 @@ candidate_ref=${XRAY_CANDIDATE_INSTALLER_REF:?}
 candidate_sha=${XRAY_CANDIDATE_INSTALLER_SHA256:?}
 expected_sha=${LEGACY_INSTALL_SHA256:?}
 scenario=${UPGRADE_SCENARIO:-direct}
-[[ $scenario == fresh || $scenario == direct || $scenario == shell-first || $scenario == reinstall ]]
+[[ $scenario == fresh || $scenario == direct || $scenario == shell-first || $scenario == reinstall || $scenario == failure-recovery ]]
 [[ $base =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && $candidate =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
 [[ $base_ref =~ ^[0-9a-f]{40}$ && $candidate_ref =~ ^[0-9a-f]{40}$ ]]
 [[ $base_sha =~ ^[0-9a-f]{64}$ && $candidate_sha =~ ^[0-9a-f]{64}$ && $expected_sha =~ ^[0-9a-f]{64}$ ]]
@@ -63,6 +63,23 @@ if [[ $scenario == fresh ]]; then
     runuser -u "$user" -- test -r /usr/local/etc/xray/config.json
     runuser -u "$user" -- test -w /var/log/xray
     echo "Legacy fresh install passed: Xray $candidate, service account $user"
+    exit 0
+fi
+if [[ $scenario == failure-recovery ]]; then
+    # Inject a verified-format but incorrect checksum, forcing the real
+    # downloader to reject the installer after the service was stopped.
+    bad_sha=$(printf '%064d' 0)
+    if XRAY_CANDIDATE_VERSION="$candidate" XRAY_CANDIDATE_INSTALLER_REF="$candidate_ref" \
+        XRAY_CANDIDATE_INSTALLER_SHA256="$bad_sha" \
+        bash /etc/idleleo/install.sh --xray-update auto_update >"$log" 2>&1; then
+        echo 'Corrupted installer checksum unexpectedly accepted' >&2
+        exit 1
+    fi
+    grep -q 'Xray-install SHA256 mismatch' "$log" || { echo 'Failure did not reach checksum verification' >&2; exit 1; }
+    [[ $(/usr/local/bin/xray version | awk 'NR==1 {sub(/^v/, "", $2); print $2}') == "$base" ]]
+    [[ $(sha256sum /etc/idleleo/conf/xray/config.json | awk '{print $1}') == "$config_sha" ]]
+    systemctl is-active --quiet xray || { echo 'Original service was not restored after rejection' >&2; diagnose; exit 1; }
+    echo "Legacy failure recovery passed: retained Xray $base and original config"
     exit 0
 fi
 if [[ $scenario == shell-first ]]; then
