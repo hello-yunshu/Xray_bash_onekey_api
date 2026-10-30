@@ -1,6 +1,26 @@
 name: Qualify legacy shell upgrades (evidence only)
 
 on:
+  workflow_call:
+    inputs:
+      base_version:
+        required: true
+        type: string
+      base_installer_ref:
+        required: true
+        type: string
+      base_installer_sha256:
+        required: true
+        type: string
+      candidate_version:
+        required: true
+        type: string
+      candidate_installer_ref:
+        required: true
+        type: string
+      candidate_installer_sha256:
+        required: true
+        type: string
   pull_request:
     paths:
       - compatibility-baselines.json

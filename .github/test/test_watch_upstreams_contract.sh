@@ -7,7 +7,9 @@ workflow=${repo}/.github/workflows/watch-upstreams.yml
 
 grep -Fq 'qualify-xray-fresh:' "${workflow}"
 grep -Fq 'qualify-xray-upgrade:' "${workflow}"
-grep -Fq 'needs: [discover, qualify-xray-fresh, qualify-xray-upgrade]' "${workflow}"
+grep -Fq 'needs: [discover, qualify-xray-fresh, qualify-xray-upgrade, compatibility-release-gate]' "${workflow}"
+grep -Fq 'uses: ./.github/workflows/qualify-legacy-upgrade.yml' "${workflow}"
+[[ $(grep -Fc "needs.compatibility-release-gate.result == 'success'" "${workflow}") -eq 2 ]]
 
 for mode in xtls_only ws_grpc_xhttp reality reality_nginx tls; do
     grep -Fq -- "- ${mode}" "${workflow}"

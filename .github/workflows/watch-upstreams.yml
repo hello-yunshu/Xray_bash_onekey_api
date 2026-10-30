@@ -34,7 +34,7 @@ jobs:
 
   qualify-xray-fresh:
     needs: discover
-    if: needs.discover.outputs.xray_changed == '1' || github.event_name == 'workflow_dispatch'
+    if: needs.discover.outputs.xray_changed == '1' || needs.discover.outputs.installer_changed == '1' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -58,18 +58,18 @@ jobs:
           printf 'MAIN_REPO_SHA=%s\nXRAY_CANDIDATE=%s\nINSTALLER_REF=%s\nMODE=%s\n' \
             '${{ needs.discover.outputs.main_sha }}' \
             '${{ needs.discover.outputs.candidate_version }}' \
-            '${{ needs.discover.outputs.current_installer_ref }}' \
+            '${{ needs.discover.outputs.installer_candidate_ref }}' \
             '${{ matrix.mode }}'
       - name: Isolated fresh install qualification
         env:
           XRAY_CANDIDATE_VERSION: ${{ needs.discover.outputs.candidate_version }}
-          XRAY_CANDIDATE_INSTALLER_REF: ${{ needs.discover.outputs.current_installer_ref }}
-          XRAY_CANDIDATE_INSTALLER_SHA256: ${{ needs.discover.outputs.current_installer_sha }}
+          XRAY_CANDIDATE_INSTALLER_REF: ${{ needs.discover.outputs.installer_candidate_ref }}
+          XRAY_CANDIDATE_INSTALLER_SHA256: ${{ needs.discover.outputs.installer_candidate_sha }}
         run: sudo -E bash .github/test/test_install.sh '${{ matrix.mode }}'
 
   qualify-xray-upgrade:
     needs: discover
-    if: needs.discover.outputs.xray_changed == '1' || github.event_name == 'workflow_dispatch'
+    if: needs.discover.outputs.xray_changed == '1' || needs.discover.outputs.installer_changed == '1' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -85,8 +85,8 @@ jobs:
         env:
           BASE_XRAY_VERSION: ${{ needs.discover.outputs.current_xray_version }}
           XRAY_CANDIDATE_VERSION: ${{ needs.discover.outputs.candidate_version }}
-          XRAY_CANDIDATE_INSTALLER_REF: ${{ needs.discover.outputs.current_installer_ref }}
-          XRAY_CANDIDATE_INSTALLER_SHA256: ${{ needs.discover.outputs.current_installer_sha }}
+          XRAY_CANDIDATE_INSTALLER_REF: ${{ needs.discover.outputs.installer_candidate_ref }}
+          XRAY_CANDIDATE_INSTALLER_SHA256: ${{ needs.discover.outputs.installer_candidate_sha }}
         run: sudo -E bash .github/test/test_candidate_real_upgrade.sh
 
   qualify-installer:
@@ -117,10 +117,36 @@ jobs:
           XRAY_CURRENT_INSTALLER_SHA256: ${{ needs.discover.outputs.current_installer_sha }}
         run: sudo -E bash .github/test/test_installer_candidate_smoke.sh '${{ matrix.scenario }}'
 
+  qualify-legacy:
+    needs: discover
+    if: needs.discover.outputs.xray_changed == '1' || needs.discover.outputs.installer_changed == '1' || github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/qualify-legacy-upgrade.yml
+    permissions:
+      contents: read
+    with:
+      base_version: ${{ needs.discover.outputs.current_xray_version }}
+      base_installer_ref: ${{ needs.discover.outputs.current_installer_ref }}
+      base_installer_sha256: ${{ needs.discover.outputs.current_installer_sha }}
+      candidate_version: ${{ needs.discover.outputs.candidate_version }}
+      candidate_installer_ref: ${{ needs.discover.outputs.installer_candidate_ref }}
+      candidate_installer_sha256: ${{ needs.discover.outputs.installer_candidate_sha }}
+
+  compatibility-release-gate:
+    needs: [discover, qualify-xray-fresh, qualify-xray-upgrade, qualify-installer, qualify-legacy]
+    if: always() && (needs.discover.outputs.xray_changed == '1' || needs.discover.outputs.installer_changed == '1')
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Refuse incomplete qualification
+        run: |
+          echo 'Full evidence generation, verification and immutable release publication are not wired yet.' >&2
+          exit 1
+
   promote-xray:
-    needs: [discover, qualify-xray-fresh, qualify-xray-upgrade]
+    needs: [discover, qualify-xray-fresh, qualify-xray-upgrade, compatibility-release-gate]
     if: >-
       needs.discover.outputs.xray_changed == '1' &&
+      needs.compatibility-release-gate.result == 'success' &&
       needs.qualify-xray-fresh.result == 'success' &&
       needs.qualify-xray-upgrade.result == 'success'
     runs-on: ubuntu-latest
@@ -143,9 +169,10 @@ jobs:
           git push origin HEAD:main
 
   promote-installer:
-    needs: [discover, qualify-xray-fresh, qualify-xray-upgrade, qualify-installer, promote-xray]
+    needs: [discover, qualify-xray-fresh, qualify-xray-upgrade, qualify-installer, promote-xray, compatibility-release-gate]
     if: >-
       always() && needs.discover.outputs.installer_changed == '1' &&
+      needs.compatibility-release-gate.result == 'success' &&
       needs.qualify-installer.result == 'success' &&
       (needs.discover.outputs.xray_changed != '1' ||
        needs.qualify-xray-fresh.result != 'success' ||
