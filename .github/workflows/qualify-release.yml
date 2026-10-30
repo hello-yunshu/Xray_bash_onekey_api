@@ -1,0 +1,128 @@
+name: Qualify candidate API release (read only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_version:
+        description: Existing Xray version
+        required: true
+        type: string
+      base_installer_ref:
+        description: Existing installer commit
+        required: true
+        type: string
+      base_installer_sha256:
+        description: Existing installer SHA-256
+        required: true
+        type: string
+      candidate_version:
+        description: Candidate Xray version
+        required: true
+        type: string
+      candidate_installer_ref:
+        description: Candidate installer commit
+        required: true
+        type: string
+      candidate_installer_sha256:
+        description: Candidate installer SHA-256
+        required: true
+        type: string
+  pull_request:
+    paths:
+      - compatibility-baselines.json
+      - .github/scripts/qualify_legacy_upgrade.sh
+      - .github/scripts/collect_qualification_evidence.py
+      - .github/workflows/qualify-legacy-upgrade.yml
+      - .github/workflows/qualify-release.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  inputs:
+    runs-on: ubuntu-latest
+    outputs:
+      base_version: ${{ steps.resolve.outputs.base_version }}
+      base_ref: ${{ steps.resolve.outputs.base_ref }}
+      base_sha: ${{ steps.resolve.outputs.base_sha }}
+      candidate_version: ${{ steps.resolve.outputs.candidate_version }}
+      candidate_ref: ${{ steps.resolve.outputs.candidate_ref }}
+      candidate_sha: ${{ steps.resolve.outputs.candidate_sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - id: resolve
+        env:
+          BASE_VERSION: ${{ inputs.base_version }}
+          BASE_REF: ${{ inputs.base_installer_ref }}
+          BASE_SHA: ${{ inputs.base_installer_sha256 }}
+          CANDIDATE_VERSION: ${{ inputs.candidate_version }}
+          CANDIDATE_REF: ${{ inputs.candidate_installer_ref }}
+          CANDIDATE_SHA: ${{ inputs.candidate_installer_sha256 }}
+        run: |
+          set -euo pipefail
+          # PR-only fixture; manual dispatch requires all explicit inputs.
+          BASE_VERSION=${BASE_VERSION:-26.3.27}
+          BASE_REF=${BASE_REF:-e741a4f56d368afbb9e5be3361b40c4552d3710d}
+          BASE_SHA=${BASE_SHA:-7f70c95f6b418da8b4f4883343d602964915e28748993870fd554383afdbe555}
+          CANDIDATE_VERSION=${CANDIDATE_VERSION:-$(jq -r .xray_online_version xray_shell_versions.json)}
+          CANDIDATE_REF=${CANDIDATE_REF:-$(jq -r .xray_installer_ref xray_shell_versions.json)}
+          CANDIDATE_SHA=${CANDIDATE_SHA:-$(jq -r .xray_installer_sha256 xray_shell_versions.json)}
+          [[ "$BASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$CANDIDATE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$BASE_REF" =~ ^[0-9a-f]{40}$ && "$CANDIDATE_REF" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$BASE_SHA" =~ ^[0-9a-f]{64}$ && "$CANDIDATE_SHA" =~ ^[0-9a-f]{64}$ ]]
+          {
+            echo "base_version=$BASE_VERSION"
+            echo "base_ref=$BASE_REF"
+            echo "base_sha=$BASE_SHA"
+            echo "candidate_version=$CANDIDATE_VERSION"
+            echo "candidate_ref=$CANDIDATE_REF"
+            echo "candidate_sha=$CANDIDATE_SHA"
+          } >> "$GITHUB_OUTPUT"
+
+  qualify:
+    needs: inputs
+    uses: ./.github/workflows/qualify-legacy-upgrade.yml
+    permissions:
+      contents: read
+    with:
+      base_version: ${{ needs.inputs.outputs.base_version }}
+      base_installer_ref: ${{ needs.inputs.outputs.base_ref }}
+      base_installer_sha256: ${{ needs.inputs.outputs.base_sha }}
+      candidate_version: ${{ needs.inputs.outputs.candidate_version }}
+      candidate_installer_ref: ${{ needs.inputs.outputs.candidate_ref }}
+      candidate_installer_sha256: ${{ needs.inputs.outputs.candidate_sha }}
+
+  evidence:
+    needs: [inputs, qualify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Collect all successful exact jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_VERSION: ${{ needs.inputs.outputs.candidate_version }}
+          CANDIDATE_REF: ${{ needs.inputs.outputs.candidate_ref }}
+          CANDIDATE_SHA: ${{ needs.inputs.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" | jq '[.[].jobs[]]' > "$RUNNER_TEMP/jobs.json"
+          jq -n --arg v "$CANDIDATE_VERSION" --arg ref "$CANDIDATE_REF" --arg sha "$CANDIDATE_SHA" \
+            '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha}' > "$RUNNER_TEMP/candidate.json"
+          python3 .github/scripts/collect_qualification_evidence.py \
+            --baselines compatibility-baselines.json --jobs "$RUNNER_TEMP/jobs.json" \
+            --candidate "$RUNNER_TEMP/candidate.json" --output evidence/compatibility.json \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --commit "$GITHUB_SHA"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qualification-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/compatibility.json
+          if-no-files-found: error
