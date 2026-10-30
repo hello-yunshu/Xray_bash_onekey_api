@@ -1,0 +1,27 @@
+name: Verify published shell baseline identities
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - compatibility-baselines.json
+      - .github/scripts/verify_shell_baselines.py
+      - .github/test/test_verify_shell_baselines.py
+      - .github/workflows/verify-shell-baselines.yml
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Verify published tags and assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 .github/test/test_verify_shell_baselines.py
+          python3 .github/scripts/verify_shell_baselines.py compatibility-baselines.json
