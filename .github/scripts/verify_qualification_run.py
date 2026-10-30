@@ -10,7 +10,7 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path
-from collect_qualification_evidence import INSTALLER_SCENARIOS, MODES, SCENARIOS
+from collect_qualification_evidence import BOOTSTRAP_IMAGES, INSTALLER_SCENARIOS, MODES, SCENARIOS
 
 
 def api(path):
@@ -56,6 +56,14 @@ def verify(evidence_bytes, repo, run_id, trusted_sha, attempt):
         matches = [job for job in jobs if job.get('id') == result.get('jobId')]
         if result.get('runId') != run_id or result.get('job') != name or len(matches) != 1 or matches[0].get('name') != name or matches[0].get('status') != 'completed' or matches[0].get('conclusion') != 'success':
             raise ValueError('installer smoke job missing or unsuccessful')
+    bootstrap_jobs = evidence.get('bootstrapJobs')
+    if not isinstance(bootstrap_jobs, list) or len(bootstrap_jobs) != len(BOOTSTRAP_IMAGES) or {j.get('image') for j in bootstrap_jobs} != set(BOOTSTRAP_IMAGES):
+        raise ValueError('missing minimal bootstrap environments')
+    for result in bootstrap_jobs:
+        name = f"Minimal bootstrap ({result['image']})"
+        matches = [job for job in jobs if job.get('id') == result.get('jobId')]
+        if result.get('coverage') != 'minimal-bootstrap-only' or result.get('runId') != run_id or result.get('job') != name or len(matches) != 1 or matches[0].get('name') != name or matches[0].get('status') != 'completed' or matches[0].get('conclusion') != 'success':
+            raise ValueError('minimal bootstrap job missing or unsuccessful')
     for baseline in evidence['baselines']:
         version = baseline['version']
         if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version):

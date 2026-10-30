@@ -184,8 +184,33 @@ jobs:
           [[ $(sha256sum shell/install.sh | awk '{print $1}') == "$SHELL_SHA" ]]
           sudo -E bash shell/.github/test/test_installer_candidate_smoke.sh "$SCENARIO"
 
+  minimal-bootstrap:
+    needs: inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [debian:12-slim, debian:13-slim, ubuntu:24.04, ubuntu:26.04, 'quay.io/centos/centos:stream10']
+    name: Minimal bootstrap (${{ matrix.image }})
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: hello-yunshu/Xray_bash_onekey
+          ref: ${{ needs.inputs.outputs.shell_commit }}
+          path: shell
+          persist-credentials: false
+      - name: Verify shell and run minimal bootstrap
+        env:
+          SHELL_SHA: ${{ needs.inputs.outputs.shell_sha }}
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+          [[ $(sha256sum shell/install.sh | awk '{print $1}') == "$SHELL_SHA" ]]
+          docker run --rm -v "$PWD/shell:/repo:ro" -e REPO_DIR=/repo "$IMAGE" bash /repo/.github/test/test_minimal_bootstrap.sh
+
   evidence:
-    needs: [inputs, qualify, full-install, installer-smoke]
+    needs: [inputs, qualify, full-install, installer-smoke, minimal-bootstrap]
     runs-on: ubuntu-latest
     permissions:
       contents: read

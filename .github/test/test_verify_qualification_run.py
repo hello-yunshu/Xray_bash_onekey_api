@@ -25,10 +25,13 @@ class RunVerificationTests(unittest.TestCase):
                          for i, mode in enumerate(module.MODES))
         self.jobs.extend({'id': 200 + i, 'name': f'Installer smoke ({scenario})', 'status': 'completed', 'conclusion': 'success'}
                          for i, scenario in enumerate(module.INSTALLER_SCENARIOS))
+        self.jobs.extend({'id': 300 + i, 'name': f'Minimal bootstrap ({image})', 'status': 'completed', 'conclusion': 'success'}
+                         for i, image in enumerate(module.BOOTSTRAP_IMAGES))
         self.artifacts = [{'name': 'qualification-evidence-11-2', 'expired': False}]
         mode_jobs = [{'mode': mode, 'job': f'Full install ({mode})', 'jobId': 100 + i, 'runId': 11} for i, mode in enumerate(module.MODES)]
         installer_jobs = [{'scenario': scenario, 'job': f'Installer smoke ({scenario})', 'jobId': 200 + i, 'runId': 11} for i, scenario in enumerate(module.INSTALLER_SCENARIOS)]
-        self.evidence = json.dumps({'qualificationCommit': self.sha, 'runAttempt': 2, 'modeJobs': mode_jobs, 'installerJobs': installer_jobs, 'baselines': [{'version': '3.2.9', 'scenarios': {'legacy-upgrade':
+        bootstrap_jobs = [{'image': image, 'job': f'Minimal bootstrap ({image})', 'jobId': 300 + i, 'runId': 11, 'coverage': 'minimal-bootstrap-only'} for i, image in enumerate(module.BOOTSTRAP_IMAGES)]
+        self.evidence = json.dumps({'qualificationCommit': self.sha, 'runAttempt': 2, 'modeJobs': mode_jobs, 'installerJobs': installer_jobs, 'bootstrapJobs': bootstrap_jobs, 'baselines': [{'version': '3.2.9', 'scenarios': {'legacy-upgrade':
                        {'runId': 11, 'jobId': 44, 'job': 'qualify / Legacy upgrade (3.2.9, direct)'}}}]}).encode()
 
     def verify(self):

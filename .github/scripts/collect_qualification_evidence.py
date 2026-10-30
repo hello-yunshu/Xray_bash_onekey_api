@@ -10,6 +10,7 @@ SCENARIOS = {'fresh': 'fresh', 'legacy-upgrade': 'direct',
              'failure-recovery': 'failure-recovery', 'fallback': 'fallback'}
 MODES = ('xtls_only', 'ws_grpc_xhttp', 'reality', 'reality_nginx', 'tls')
 INSTALLER_SCENARIOS = ('fresh', 'reinstall', 'remove')
+BOOTSTRAP_IMAGES = ('debian:12-slim', 'debian:13-slim', 'ubuntu:24.04', 'ubuntu:26.04', 'quay.io/centos/centos:stream10')
 
 
 def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt):
@@ -79,8 +80,20 @@ def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt):
         if not isinstance(job_id, int) or isinstance(job_id, bool) or job_id < 1:
             raise ValueError(f'invalid job identity: {name}')
         installer_jobs.append({'scenario': scenario, 'runId': run_id, 'jobId': job_id, 'job': name})
+    bootstrap_jobs = []
+    for image in BOOTSTRAP_IMAGES:
+        name = f'Minimal bootstrap ({image})'
+        found = [job for job in jobs if job.get('name') == name]
+        if len(found) != 1 or found[0].get('status') != 'completed' or found[0].get('conclusion') != 'success':
+            raise ValueError(f'missing or unsuccessful job: {name}')
+        job_id = found[0].get('id')
+        if not isinstance(job_id, int) or isinstance(job_id, bool) or job_id < 1:
+            raise ValueError(f'invalid job identity: {name}')
+        bootstrap_jobs.append({'image': image, 'runId': run_id, 'jobId': job_id, 'job': name,
+                               'coverage': 'minimal-bootstrap-only'})
     return {'schemaVersion': 1, 'candidate': candidate, 'base': base, 'qualificationCommit': commit,
-            'runAttempt': attempt, 'modeJobs': modes, 'installerJobs': installer_jobs, 'baselines': entries}
+            'runAttempt': attempt, 'modeJobs': modes, 'installerJobs': installer_jobs,
+            'bootstrapJobs': bootstrap_jobs, 'baselines': entries}
 
 
 def main():

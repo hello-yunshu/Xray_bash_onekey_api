@@ -24,6 +24,8 @@ class CollectionTests(unittest.TestCase):
                           'conclusion': 'success', 'id': i + 100} for i, mode in enumerate(module.MODES))
         self.jobs.extend({'name': f'Installer smoke ({scenario})', 'status': 'completed',
                           'conclusion': 'success', 'id': i + 200} for i, scenario in enumerate(module.INSTALLER_SCENARIOS))
+        self.jobs.extend({'name': f'Minimal bootstrap ({image})', 'status': 'completed',
+                          'conclusion': 'success', 'id': i + 300} for i, image in enumerate(module.BOOTSTRAP_IMAGES))
 
     def collect(self):
         return module.collect(self.baselines, self.jobs, self.candidate, self.base, self.facts, 123, 'e' * 40, 1)
