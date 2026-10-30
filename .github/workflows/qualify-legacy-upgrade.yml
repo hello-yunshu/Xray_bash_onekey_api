@@ -75,7 +75,8 @@ jobs:
       fail-fast: false
       matrix:
         baseline: ${{ fromJSON(needs.baselines.outputs.matrix) }}
-    name: Legacy upgrade (${{ matrix.baseline.version }})
+        scenario: [direct, shell-first]
+    name: Legacy upgrade (${{ matrix.baseline.version }}, ${{ matrix.scenario }})
     steps:
       - uses: actions/checkout@v5
         with:
@@ -91,6 +92,7 @@ jobs:
         env:
           LEGACY_REPO: ${{ github.workspace }}/legacy
           LEGACY_INSTALL_SHA256: ${{ matrix.baseline.installSha256 }}
+          UPGRADE_SCENARIO: ${{ matrix.scenario }}
           XRAY_VERSIONS_FILE: ${{ github.workspace }}/api/xray_shell_versions.json
           BASE_XRAY_VERSION: ${{ inputs.base_version }}
           BASE_INSTALLER_REF: ${{ inputs.base_installer_ref }}
