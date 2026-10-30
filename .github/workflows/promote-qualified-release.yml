@@ -45,6 +45,10 @@ jobs:
           gh run download "$QUAL_RUN" --repo "$GITHUB_REPOSITORY" \
             --name "qualification-evidence-$QUAL_RUN-$QUAL_ATTEMPT" --dir "$tmp/evidence"
           evidence="$tmp/evidence/compatibility.json"
+          if [[ $(jq -r '.candidate.testedVersion // .base.testedVersion' "$evidence") != $(jq -r '.base.testedVersion' "$evidence") ]]; then
+            echo 'Fallback candidate is evidence only; use the tested-version promotion workflow'
+            exit 0
+          fi
           jq -e '{xray_online_version:.base.xrayVersion,xray_installer_ref:.base.installerRef,xray_installer_sha256:.base.installerSha256}' "$evidence" > "$tmp/expected.json"
           jq -e '{xray_online_version:.candidate.xrayVersion,xray_installer_ref:.candidate.installerRef,xray_installer_sha256:.candidate.installerSha256}' "$evidence" > "$tmp/candidate.json"
           current_tuple=$(jq -cS '{xray_online_version,xray_installer_ref,xray_installer_sha256}' xray_shell_versions.json)

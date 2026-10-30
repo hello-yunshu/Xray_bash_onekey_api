@@ -27,6 +27,8 @@ def prepare(metadata, evidence, baselines):
     if (metadata.get('xray_online_version'), metadata.get('xray_installer_ref'),
             metadata.get('xray_installer_sha256')) != (candidate['xrayVersion'], candidate['installerRef'], candidate['installerSha256']):
         raise ValueError('metadata and evidence candidate differ')
+    if 'testedVersion' in candidate and metadata.get('xray_tested_version') != candidate['testedVersion']:
+        raise ValueError('metadata and evidence fallback differ')
     expected = {b['version']: (b['commit'], b['installSha256']) for b in baselines['baselines']}
     if len(expected) != len(baselines['baselines']) or not expected:
         raise ValueError('invalid baseline list')

@@ -60,3 +60,4 @@ jobs:
           python3 .github/test/test_verify_api_release.py
           python3 .github/test/test_publish_api_release.py
           python3 .github/test/test_collect_qualification_evidence.py
+          python3 .github/test/test_verify_tested_promotion.py

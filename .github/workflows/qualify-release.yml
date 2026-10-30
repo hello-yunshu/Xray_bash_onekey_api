@@ -27,6 +27,10 @@ on:
         description: Candidate installer SHA-256
         required: true
         type: string
+      candidate_tested_version:
+        description: Optional proposed Xray fallback version; defaults to the current fallback
+        required: false
+        type: string
   pull_request:
     paths:
       - compatibility-baselines.json
@@ -56,6 +60,7 @@ jobs:
       shell_commit: ${{ steps.resolve.outputs.shell_commit }}
       shell_sha: ${{ steps.resolve.outputs.shell_sha }}
       tested_version: ${{ steps.resolve.outputs.tested_version }}
+      candidate_tested_version: ${{ steps.resolve.outputs.candidate_tested_version }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -68,6 +73,7 @@ jobs:
           CANDIDATE_VERSION: ${{ inputs.candidate_version }}
           CANDIDATE_REF: ${{ inputs.candidate_installer_ref }}
           CANDIDATE_SHA: ${{ inputs.candidate_installer_sha256 }}
+          CANDIDATE_TESTED_VERSION: ${{ inputs.candidate_tested_version }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
@@ -91,6 +97,8 @@ jobs:
           shell_version=$(jq -r '.shell_online_version' xray_shell_versions.json)
           tested_version=$(jq -r '.xray_tested_version // empty' xray_shell_versions.json)
           [[ "$tested_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          CANDIDATE_TESTED_VERSION=${CANDIDATE_TESTED_VERSION:-$tested_version}
+          [[ "$CANDIDATE_TESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           shell_sha=$(jq -r '.shell_release_sha256' xray_shell_versions.json)
           shell_commit=$(jq -r --arg version "$shell_version" '[.baselines[] | select(.version == $version) | .commit] | if length == 1 then .[0] else empty end' compatibility-baselines.json)
           baseline_sha=$(jq -r --arg version "$shell_version" '[.baselines[] | select(.version == $version) | .installSha256] | if length == 1 then .[0] else empty end' compatibility-baselines.json)
@@ -106,6 +114,7 @@ jobs:
             echo "shell_commit=$shell_commit"
             echo "shell_sha=$shell_sha"
             echo "tested_version=$tested_version"
+            echo "candidate_tested_version=$CANDIDATE_TESTED_VERSION"
           } >> "$GITHUB_OUTPUT"
 
   qualify:
@@ -120,6 +129,7 @@ jobs:
       candidate_version: ${{ needs.inputs.outputs.candidate_version }}
       candidate_installer_ref: ${{ needs.inputs.outputs.candidate_ref }}
       candidate_installer_sha256: ${{ needs.inputs.outputs.candidate_sha }}
+      candidate_tested_version: ${{ needs.inputs.outputs.candidate_tested_version }}
 
   full-install:
     needs: inputs
@@ -229,12 +239,13 @@ jobs:
           BASE_REF: ${{ needs.inputs.outputs.base_ref }}
           BASE_SHA: ${{ needs.inputs.outputs.base_sha }}
           TESTED_VERSION: ${{ needs.inputs.outputs.tested_version }}
+          CANDIDATE_TESTED_VERSION: ${{ needs.inputs.outputs.candidate_tested_version }}
         run: |
           set -euo pipefail
           mkdir -p evidence
           gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" | jq '[.[].jobs[]]' > "$RUNNER_TEMP/jobs.json"
-          jq -n --arg v "$CANDIDATE_VERSION" --arg ref "$CANDIDATE_REF" --arg sha "$CANDIDATE_SHA" \
-            '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha}' > "$RUNNER_TEMP/candidate.json"
+          jq -n --arg v "$CANDIDATE_VERSION" --arg ref "$CANDIDATE_REF" --arg sha "$CANDIDATE_SHA" --arg tested "$CANDIDATE_TESTED_VERSION" \
+            '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha,testedVersion:$tested}' > "$RUNNER_TEMP/candidate.json"
           jq -n --arg v "$BASE_VERSION" --arg ref "$BASE_REF" --arg sha "$BASE_SHA" --arg tested "$TESTED_VERSION" \
             '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha,testedVersion:$tested}' > "$RUNNER_TEMP/base.json"
           gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \

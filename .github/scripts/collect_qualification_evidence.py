@@ -49,7 +49,7 @@ def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt):
                 raise ValueError(f'invalid job identity: {name}')
             fact_key = f'{version}-{scenario}'
             fact = facts.get(fact_key, {})
-            expected_version = (base.get('testedVersion') if key == 'fallback' else
+            expected_version = (candidate.get('testedVersion', base.get('testedVersion')) if key == 'fallback' else
                                 initial['xrayVersion'] if key in ('failure-recovery', 'restart-recovery') else candidate['xrayVersion'])
             if (fact.get('version') != expected_version or
                     not re.fullmatch(r'[0-9a-f]{64}', str(fact.get('sha256', ''))) or

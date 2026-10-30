@@ -73,6 +73,13 @@ class CollectionTests(unittest.TestCase):
         self.assertEqual(result['initial'], initial)
         self.assertEqual(result['scenarios']['legacy-upgrade']['environment']['coverage'], 'production-entry')
 
+    def test_proposed_fallback_must_match_observed_binary(self):
+        self.candidate['testedVersion'] = '26.3.27'
+        with self.assertRaisesRegex(ValueError, 'binary evidence'):
+            self.collect()
+        self.facts['3.2.9-fallback']['version'] = '26.3.27'
+        self.collect()
+
 
 if __name__ == '__main__':
     unittest.main()

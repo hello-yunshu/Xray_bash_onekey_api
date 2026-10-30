@@ -33,9 +33,14 @@ on:
         description: 'Optional reason or verification note (max 500 chars, control chars stripped)'
         required: false
         type: string
+      qualification_run:
+        description: 'Successful qualification run ID (required for Xray fallback)'
+        required: false
+        type: string
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   promote:
@@ -48,6 +53,25 @@ jobs:
 
       - name: Install jq
         run: sudo apt-get update -qq && sudo apt-get install -y -qq jq
+
+      - name: Authenticate Xray fallback qualification
+        if: inputs.component == 'xray'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUAL_RUN: ${{ inputs.qualification_run }}
+          TARGET: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main && "$QUAL_RUN" =~ ^[1-9][0-9]*$ ]]
+          [[ $(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha) == "$GITHUB_SHA" ]]
+          attempt=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$QUAL_RUN" --jq .run_attempt)
+          [[ "$attempt" =~ ^[1-9][0-9]*$ ]]
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          gh run download "$QUAL_RUN" --repo "$GITHUB_REPOSITORY" --name "qualification-evidence-$QUAL_RUN-$attempt" --dir "$tmp"
+          python3 .github/scripts/verify_tested_promotion.py --evidence "$tmp/compatibility.json" \
+            --current xray_shell_versions.json --baselines compatibility-baselines.json \
+            --target "$TARGET" --run-id "$QUAL_RUN" --attempt "$attempt" --commit "$GITHUB_SHA"
 
       - name: Make promote script executable
         run: chmod +x .github/scripts/promote_tested_version.sh
