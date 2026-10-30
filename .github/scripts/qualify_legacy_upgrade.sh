@@ -70,7 +70,8 @@ if [[ $scenario == fresh ]]; then
     user=$(systemctl show xray -p User --value)
     [[ -n $user ]] || user=root
     runuser -u "$user" -- test -r /usr/local/etc/xray/config.json
-    runuser -u "$user" -- test -w /var/log/xray
+    runuser -u "$user" -- test -w /var/log/xray/access.log
+    runuser -u "$user" -- test -w /var/log/xray/error.log
     record_binary
     echo "Legacy fresh install passed: Xray $candidate, service account $user"
     exit 0
@@ -119,7 +120,8 @@ if [[ $scenario == fallback ]]; then
     user=$(systemctl show xray -p User --value)
     [[ -n $user ]] || user=root
     runuser -u "$user" -- test -r /usr/local/etc/xray/config.json || { echo 'Fallback service user cannot read config' >&2; exit 1; }
-    runuser -u "$user" -- test -w /var/log/xray || { echo 'Fallback service user cannot write logs' >&2; exit 1; }
+    runuser -u "$user" -- test -w /var/log/xray/access.log || { echo 'Fallback service user cannot write access log' >&2; exit 1; }
+    runuser -u "$user" -- test -w /var/log/xray/error.log || { echo 'Fallback service user cannot write error log' >&2; exit 1; }
     record_binary
     echo "Legacy tested-version fallback passed: Xray $tested, service account $user"
     exit 0
@@ -152,6 +154,7 @@ systemctl is-active --quiet xray
 user=$(systemctl show xray -p User --value)
 [[ -n $user ]] || user=root
 runuser -u "$user" -- test -r /usr/local/etc/xray/config.json
-runuser -u "$user" -- test -w /var/log/xray
+runuser -u "$user" -- test -w /var/log/xray/access.log
+runuser -u "$user" -- test -w /var/log/xray/error.log
 record_binary
 echo "Legacy upgrade passed: $scenario, Xray $install_version -> $candidate, service account $user, config unchanged"
