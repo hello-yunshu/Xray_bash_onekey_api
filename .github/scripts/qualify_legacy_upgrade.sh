@@ -138,7 +138,13 @@ EOF
         exit 1
     fi
     [[ -s $marker ]] || { echo 'Failure injection was not exercised' >&2; exit 1; }
-    [[ $(sha256sum /usr/local/bin/xray | awk '{print $1}') == "$original_binary" ]] || { echo 'Original binary was not restored' >&2; exit 1; }
+    if [[ $(sha256sum /usr/local/bin/xray | awk '{print $1}') != "$original_binary" ]]; then
+        restored_version=$(/usr/local/bin/xray version 2>/dev/null | awk 'NR==1 {sub(/^v/, "", $2); print $2}')
+        [[ $restored_version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || restored_version=unknown
+        echo "Original binary was not restored; observed Xray version: $restored_version" >&2
+        diagnose
+        exit 1
+    fi
     [[ $(sha256sum /etc/idleleo/conf/xray/config.json | awk '{print $1}') == "$config_sha" ]]
     systemctl is-active --quiet xray || { echo 'Original service was not restored after failed start' >&2; diagnose; exit 1; }
     record_binary
