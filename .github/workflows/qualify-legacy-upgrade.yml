@@ -75,7 +75,7 @@ jobs:
       fail-fast: false
       matrix:
         baseline: ${{ fromJSON(needs.baselines.outputs.matrix) }}
-        scenario: [fresh, direct, shell-first]
+        scenario: [fresh, direct, shell-first, reinstall]
     name: Legacy upgrade (${{ matrix.baseline.version }}, ${{ matrix.scenario }})
     steps:
       - uses: actions/checkout@v5

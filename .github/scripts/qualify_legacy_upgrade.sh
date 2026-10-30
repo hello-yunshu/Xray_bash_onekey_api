@@ -10,7 +10,7 @@ candidate_ref=${XRAY_CANDIDATE_INSTALLER_REF:?}
 candidate_sha=${XRAY_CANDIDATE_INSTALLER_SHA256:?}
 expected_sha=${LEGACY_INSTALL_SHA256:?}
 scenario=${UPGRADE_SCENARIO:-direct}
-[[ $scenario == fresh || $scenario == direct || $scenario == shell-first ]]
+[[ $scenario == fresh || $scenario == direct || $scenario == shell-first || $scenario == reinstall ]]
 [[ $base =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && $candidate =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
 [[ $base_ref =~ ^[0-9a-f]{40}$ && $candidate_ref =~ ^[0-9a-f]{40}$ ]]
 [[ $base_sha =~ ^[0-9a-f]{64}$ && $candidate_sha =~ ^[0-9a-f]{64}$ && $expected_sha =~ ^[0-9a-f]{64}$ ]]
@@ -37,6 +37,10 @@ if [[ $scenario == fresh ]]; then
     install_version=$candidate
     install_ref=$candidate_ref
     install_sha=$candidate_sha
+elif [[ $scenario == reinstall ]]; then
+    # Seed the same Xray version with the previous installer, then require the
+    # historical update entry to exercise its same-version reinstall branch.
+    install_version=$candidate
 fi
 echo "Installing the legacy shell with Xray $install_version and the selected exact installer"
 if ! XRAY_CANDIDATE_VERSION="$install_version" XRAY_CANDIDATE_INSTALLER_REF="$install_ref" \
@@ -48,6 +52,10 @@ if ! XRAY_CANDIDATE_VERSION="$install_version" XRAY_CANDIDATE_INSTALLER_REF="$in
 fi
 systemctl is-active --quiet xray
 config_sha=$(sha256sum /etc/idleleo/conf/xray/config.json | awk '{print $1}')
+if [[ $scenario == reinstall ]]; then
+    [[ $(jq -r '.xray_version // empty' /etc/idleleo/conf/install_config.json) == "$candidate" ]]
+    [[ $(/usr/local/bin/xray version | awk 'NR==1 {sub(/^v/, "", $2); print $2}') == "$candidate" ]]
+fi
 if [[ $scenario == fresh ]]; then
     [[ $(/usr/local/bin/xray version | awk 'NR==1 {sub(/^v/, "", $2); print $2}') == "$candidate" ]]
     user=$(systemctl show xray -p User --value)
@@ -86,4 +94,4 @@ user=$(systemctl show xray -p User --value)
 [[ -n $user ]] || user=root
 runuser -u "$user" -- test -r /usr/local/etc/xray/config.json
 runuser -u "$user" -- test -w /var/log/xray
-echo "Legacy upgrade passed: $scenario, Xray $base -> $candidate, service account $user, config unchanged"
+echo "Legacy upgrade passed: $scenario, Xray $install_version -> $candidate, service account $user, config unchanged"
