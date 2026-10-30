@@ -18,7 +18,7 @@ class CollectionTests(unittest.TestCase):
                       'conclusion': 'success', 'id': i + 1} for i, scenario in enumerate(module.SCENARIOS.values())]
 
     def collect(self):
-        return module.collect(self.baselines, self.jobs, self.candidate, 123, 'e' * 40, 1)
+        return module.collect(self.baselines, self.jobs, self.candidate, self.candidate, 123, 'e' * 40, 1)
 
     def test_records_exact_jobs_and_fallback_scope(self):
         result = self.collect()

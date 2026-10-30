@@ -111,15 +111,20 @@ jobs:
           CANDIDATE_VERSION: ${{ needs.inputs.outputs.candidate_version }}
           CANDIDATE_REF: ${{ needs.inputs.outputs.candidate_ref }}
           CANDIDATE_SHA: ${{ needs.inputs.outputs.candidate_sha }}
+          BASE_VERSION: ${{ needs.inputs.outputs.base_version }}
+          BASE_REF: ${{ needs.inputs.outputs.base_ref }}
+          BASE_SHA: ${{ needs.inputs.outputs.base_sha }}
         run: |
           set -euo pipefail
           mkdir -p evidence
           gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" | jq '[.[].jobs[]]' > "$RUNNER_TEMP/jobs.json"
           jq -n --arg v "$CANDIDATE_VERSION" --arg ref "$CANDIDATE_REF" --arg sha "$CANDIDATE_SHA" \
             '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha}' > "$RUNNER_TEMP/candidate.json"
+          jq -n --arg v "$BASE_VERSION" --arg ref "$BASE_REF" --arg sha "$BASE_SHA" \
+            '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha}' > "$RUNNER_TEMP/base.json"
           python3 .github/scripts/collect_qualification_evidence.py \
             --baselines compatibility-baselines.json --jobs "$RUNNER_TEMP/jobs.json" \
-            --candidate "$RUNNER_TEMP/candidate.json" --output evidence/compatibility.json \
+            --candidate "$RUNNER_TEMP/candidate.json" --base "$RUNNER_TEMP/base.json" --output evidence/compatibility.json \
             --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --commit "$GITHUB_SHA"
       - uses: actions/upload-artifact@v4
         with:

@@ -10,15 +10,16 @@ SCENARIOS = {'fresh': 'fresh', 'legacy-upgrade': 'direct',
              'failure-recovery': 'failure-recovery', 'fallback': 'fallback'}
 
 
-def collect(baselines, jobs, candidate, run_id, commit, attempt):
+def collect(baselines, jobs, candidate, base, run_id, commit, attempt):
     if baselines.get('schemaVersion') != 1 or not baselines.get('baselines'):
         raise ValueError('missing baselines')
     if not re.fullmatch(r'[0-9a-f]{40}', commit) or run_id < 1 or attempt < 1:
         raise ValueError('invalid qualification identity')
-    for field, pattern in (('xrayVersion', r'[0-9]+\.[0-9]+\.[0-9]+'),
-                           ('installerRef', r'[0-9a-f]{40}'), ('installerSha256', r'[0-9a-f]{64}')):
-        if not isinstance(candidate.get(field), str) or not re.fullmatch(pattern, candidate[field]):
-            raise ValueError('invalid candidate')
+    for obj in (candidate, base):
+        for field, pattern in (('xrayVersion', r'[0-9]+\.[0-9]+\.[0-9]+'),
+                               ('installerRef', r'[0-9a-f]{40}'), ('installerSha256', r'[0-9a-f]{64}')):
+            if not isinstance(obj.get(field), str) or not re.fullmatch(pattern, obj[field]):
+                raise ValueError('invalid candidate or base')
     entries = []
     versions = set()
     for base in baselines['baselines']:
@@ -42,20 +43,20 @@ def collect(baselines, jobs, candidate, run_id, commit, attempt):
                                               'coverage': 'direct-fallback-function' if key == 'fallback' else 'production-entry'}}
         entries.append({'version': version, 'commit': base['commit'],
                         'installSha256': base['installSha256'], 'scenarios': scenarios})
-    return {'schemaVersion': 1, 'candidate': candidate, 'qualificationCommit': commit,
+    return {'schemaVersion': 1, 'candidate': candidate, 'base': base, 'qualificationCommit': commit,
             'runAttempt': attempt, 'baselines': entries}
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    for arg in ('baselines', 'jobs', 'candidate', 'output'):
+    for arg in ('baselines', 'jobs', 'candidate', 'base', 'output'):
         p.add_argument('--' + arg, type=Path, required=True)
     p.add_argument('--run-id', type=int, required=True)
     p.add_argument('--attempt', type=int, required=True)
     p.add_argument('--commit', required=True)
     a = p.parse_args()
-    baselines, jobs, candidate = (json.loads(path.read_text()) for path in (a.baselines, a.jobs, a.candidate))
-    evidence = collect(baselines, jobs, candidate, a.run_id, a.commit, a.attempt)
+    baselines, jobs, candidate, base = (json.loads(path.read_text()) for path in (a.baselines, a.jobs, a.candidate, a.base))
+    evidence = collect(baselines, jobs, candidate, base, a.run_id, a.commit, a.attempt)
     with a.output.open('x') as f:
         json.dump(evidence, f, sort_keys=True, indent=2)
         f.write('\n')
