@@ -19,10 +19,13 @@ log=$(mktemp)
 trap 'rm -f "$log"' EXIT
 record_binary() {
     [[ -n ${QUALIFICATION_BINARY_EVIDENCE:-} ]] || return 0
-    local installed digest arch asset temp archive_sha extracted_sha
+    local installed digest arch asset temp archive_sha extracted_sha ID VERSION_ID
     installed=$(/usr/local/bin/xray version | awk 'NR==1 {sub(/^v/, "", $2); print $2}')
     digest=$(sha256sum /usr/local/bin/xray | awk '{print $1}')
     arch=$(uname -m)
+    # shellcheck disable=SC1091 # runner's operating-system metadata
+    . /etc/os-release
+    [[ ${ID:-} =~ ^[a-z0-9._-]+$ && ${VERSION_ID:-} =~ ^[a-zA-Z0-9._-]+$ ]] || return 1
     case "$arch" in
         x86_64) asset=Xray-linux-64.zip ;;
         aarch64) asset=Xray-linux-arm64-v8a.zip ;;
@@ -43,8 +46,8 @@ record_binary() {
     rm -rf "$temp"
     [[ "$extracted_sha" == "$digest" ]] || { echo 'Installed binary differs from the published reference archive' >&2; return 1; }
     jq -n --arg version "$installed" --arg sha256 "$digest" --arg arch "$arch" \
-        --arg asset "$asset" --arg asset_sha "$archive_sha" \
-        '{version:$version,sha256:$sha256,arch:$arch,referenceArchive:{name:$asset,sha256:$asset_sha}}' > "$QUALIFICATION_BINARY_EVIDENCE"
+        --arg asset "$asset" --arg asset_sha "$archive_sha" --arg os "$ID" --arg os_version "$VERSION_ID" \
+        '{version:$version,sha256:$sha256,arch:$arch,referenceArchive:{name:$asset,sha256:$asset_sha},os:{id:$os,version:$os_version}}' > "$QUALIFICATION_BINARY_EVIDENCE"
 }
 diagnose() {
     # Only print fixed classifications; raw installer logs can contain secrets.

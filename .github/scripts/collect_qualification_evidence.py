@@ -59,6 +59,10 @@ def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt):
             archive_name = {'x86_64': 'Xray-linux-64.zip', 'aarch64': 'Xray-linux-arm64-v8a.zip'}[fact['arch']]
             if archive.get('name') != archive_name or not re.fullmatch(r'[0-9a-f]{64}', str(archive.get('sha256', ''))):
                 raise ValueError(f'missing or invalid reference archive: {fact_key}')
+            os_info = fact.get('os', {})
+            if (not re.fullmatch(r'[a-z0-9._-]+', str(os_info.get('id', ''))) or
+                    not re.fullmatch(r'[a-zA-Z0-9._-]+', str(os_info.get('version', '')))):
+                raise ValueError(f'missing or invalid operating system identity: {fact_key}')
             identity = (fact['version'], fact['arch'])
             if identity in observed and observed[identity] != fact['sha256']:
                 raise ValueError(f'inconsistent binary bytes: {fact_key}')
@@ -74,7 +78,7 @@ def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt):
                 coverage = 'same-version-reinstall'
             scenarios[key] = {'conclusion': 'success', 'runId': run_id, 'jobId': job_id, 'job': name,
                               'binary': fact,
-                              'environment': {'runner': 'ubuntu-latest', 'mode': 'reality',
+                              'environment': {'runner': 'ubuntu-latest', 'os': os_info, 'mode': 'reality',
                                               'coverage': coverage}}
         entries.append({'version': version, 'commit': baseline['commit'],
                         'installSha256': baseline['installSha256'], 'initial': initial, 'scenarios': scenarios})

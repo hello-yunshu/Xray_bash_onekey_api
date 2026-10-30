@@ -17,7 +17,8 @@ class CollectionTests(unittest.TestCase):
         self.base = dict(self.candidate, testedVersion='25.12.8')
         self.facts = {f'3.2.9-{scenario}': {'version': ('25.12.8' if scenario == 'fallback' else '26.10.29'),
                       'sha256': ('f' * 64 if scenario == 'fallback' else 'a' * 64), 'arch': 'x86_64',
-                      'referenceArchive': {'name': 'Xray-linux-64.zip', 'sha256': 'b' * 64}}
+                      'referenceArchive': {'name': 'Xray-linux-64.zip', 'sha256': 'b' * 64},
+                      'os': {'id': 'ubuntu', 'version': '24.04'}}
                       for scenario in module.SCENARIOS.values()}
         self.jobs = [{'name': f'qualify / Legacy upgrade (3.2.9, {scenario})', 'status': 'completed',
                       'conclusion': 'success', 'id': i + 1} for i, scenario in enumerate(module.SCENARIOS.values())]
@@ -60,7 +61,8 @@ class CollectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'binary evidence'):
             self.collect()
         self.facts['3.2.9-direct'] = {'version': '26.10.29', 'sha256': 'd' * 64, 'arch': 'x86_64',
-                                     'referenceArchive': {'name': 'Xray-linux-64.zip', 'sha256': 'b' * 64}}
+                                     'referenceArchive': {'name': 'Xray-linux-64.zip', 'sha256': 'b' * 64},
+                                     'os': {'id': 'ubuntu', 'version': '24.04'}}
         with self.assertRaisesRegex(ValueError, 'inconsistent binary'):
             self.collect()
 
@@ -88,6 +90,11 @@ class CollectionTests(unittest.TestCase):
             self.collect()
         del self.facts['3.2.9-direct']['referenceArchive']
         with self.assertRaisesRegex(ValueError, 'reference archive'):
+            self.collect()
+
+    def test_rejects_missing_runner_distribution(self):
+        del self.facts['3.2.9-direct']['os']
+        with self.assertRaisesRegex(ValueError, 'operating system identity'):
             self.collect()
 
 
