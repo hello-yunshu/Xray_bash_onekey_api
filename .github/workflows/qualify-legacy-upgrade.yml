@@ -105,6 +105,9 @@ jobs:
           XRAY_CANDIDATE_VERSION: ${{ inputs.candidate_version }}
           XRAY_CANDIDATE_INSTALLER_REF: ${{ inputs.candidate_installer_ref }}
           XRAY_CANDIDATE_INSTALLER_SHA256: ${{ inputs.candidate_installer_sha256 }}
+          EVENT_NAME: ${{ github.event_name }}
+          CALLER_WORKFLOW: ${{ github.workflow }}
+          BASELINE_VERSION: ${{ matrix.baseline.version }}
         run: |
           set -euo pipefail
           # The PR smoke tests a known old installer against the current API
@@ -112,11 +115,39 @@ jobs:
           export BASE_XRAY_VERSION="${BASE_XRAY_VERSION:-26.3.27}"
           export BASE_INSTALLER_REF="${BASE_INSTALLER_REF:-e741a4f56d368afbb9e5be3361b40c4552d3710d}"
           export BASE_INSTALLER_SHA256="${BASE_INSTALLER_SHA256:-7f70c95f6b418da8b4f4883343d602964915e28748993870fd554383afdbe555}"
+          if [[ "$EVENT_NAME" == pull_request && "$CALLER_WORKFLOW" == 'Qualify legacy shell upgrades (evidence only)' ]]; then
+            # Fixed negative regression fixture. Do not change this to track
+            # the moving API tuple: expected failures must be reproducible.
+            XRAY_CANDIDATE_VERSION=${XRAY_CANDIDATE_VERSION:-26.10.29}
+            XRAY_CANDIDATE_INSTALLER_REF=${XRAY_CANDIDATE_INSTALLER_REF:-e42df6a772e60dd7b058f852262c4dbeb0bc231d}
+            XRAY_CANDIDATE_INSTALLER_SHA256=${XRAY_CANDIDATE_INSTALLER_SHA256:-954666bb028ba8561b2218372b7db76ba051f8252b2db9195321e672263aab94}
+          fi
           export XRAY_CANDIDATE_VERSION="${XRAY_CANDIDATE_VERSION:-$(jq -r .xray_online_version "$XRAY_VERSIONS_FILE")}"
           export XRAY_CANDIDATE_INSTALLER_REF="${XRAY_CANDIDATE_INSTALLER_REF:-$(jq -r .xray_installer_ref "$XRAY_VERSIONS_FILE")}"
           export XRAY_CANDIDATE_INSTALLER_SHA256="${XRAY_CANDIDATE_INSTALLER_SHA256:-$(jq -r .xray_installer_sha256 "$XRAY_VERSIONS_FILE")}"
-          sudo -E bash api/.github/scripts/qualify_legacy_upgrade.sh
+          if [[ "$EVENT_NAME" == pull_request && "$CALLER_WORKFLOW" == 'Qualify legacy shell upgrades (evidence only)' && "$BASELINE_VERSION" == 3.2.9 && "$UPGRADE_SCENARIO" =~ ^(fresh|direct|reinstall|fallback)$ ]]; then
+            log=$(mktemp)
+            trap 'rm -f "$log"' EXIT
+            # shellcheck disable=SC2024 # runner owns this redirection target
+            if sudo -E bash api/.github/scripts/qualify_legacy_upgrade.sh >"$log" 2>&1; then
+              echo 'Expected the known incompatible combination to fail' >&2
+              exit 1
+            fi
+            cat "$log"
+            grep -Fq 'diagnostic: permission denied observed' "$log" || {
+              echo 'Failure was not the expected permission incompatibility' >&2
+              exit 1
+            }
+            echo 'PASS: known incompatible legacy combination was rejected'
+          else
+            sudo -E bash api/.github/scripts/qualify_legacy_upgrade.sh
+          fi
       - uses: actions/upload-artifact@v4
+        if: >-
+          success() && !(github.event_name == 'pull_request' &&
+          github.workflow == 'Qualify legacy shell upgrades (evidence only)' &&
+          matrix.baseline.version == '3.2.9' &&
+          contains(fromJSON('["fresh","direct","reinstall","fallback"]'), matrix.scenario))
         with:
           name: qualification-binary-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.baseline.version }}-${{ matrix.scenario }}
           path: ${{ runner.temp }}/xray-binary.json
