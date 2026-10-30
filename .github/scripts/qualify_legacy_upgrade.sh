@@ -112,13 +112,14 @@ if [[ $scenario == fallback ]]; then
         diagnose
         exit 1
     fi
-    [[ $(/usr/local/bin/xray version | awk 'NR==1 {sub(/^v/, "", $2); print $2}') == "$tested" ]]
-    [[ $(sha256sum /etc/idleleo/conf/xray/config.json | awk '{print $1}') == "$config_sha" ]]
-    systemctl is-active --quiet xray
+    installed=$(/usr/local/bin/xray version | awk 'NR==1 {sub(/^v/, "", $2); print $2}')
+    [[ "$installed" == "$tested" ]] || { echo "Fallback version mismatch: expected $tested, got $installed" >&2; exit 1; }
+    [[ $(sha256sum /etc/idleleo/conf/xray/config.json | awk '{print $1}') == "$config_sha" ]] || { echo 'Fallback changed Xray config bytes' >&2; exit 1; }
+    systemctl is-active --quiet xray || { echo 'Fallback service inactive' >&2; diagnose; exit 1; }
     user=$(systemctl show xray -p User --value)
     [[ -n $user ]] || user=root
-    runuser -u "$user" -- test -r /usr/local/etc/xray/config.json
-    runuser -u "$user" -- test -w /var/log/xray
+    runuser -u "$user" -- test -r /usr/local/etc/xray/config.json || { echo 'Fallback service user cannot read config' >&2; exit 1; }
+    runuser -u "$user" -- test -w /var/log/xray || { echo 'Fallback service user cannot write logs' >&2; exit 1; }
     record_binary
     echo "Legacy tested-version fallback passed: Xray $tested, service account $user"
     exit 0
