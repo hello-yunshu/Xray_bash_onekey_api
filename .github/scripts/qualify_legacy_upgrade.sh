@@ -10,7 +10,7 @@ candidate_ref=${XRAY_CANDIDATE_INSTALLER_REF:?}
 candidate_sha=${XRAY_CANDIDATE_INSTALLER_SHA256:?}
 expected_sha=${LEGACY_INSTALL_SHA256:?}
 scenario=${UPGRADE_SCENARIO:-direct}
-[[ $scenario == fresh || $scenario == direct || $scenario == shell-first || $scenario == reinstall || $scenario == failure-recovery ]]
+[[ $scenario == fresh || $scenario == direct || $scenario == shell-first || $scenario == reinstall || $scenario == failure-recovery || $scenario == fallback ]]
 [[ $base =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && $candidate =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
 [[ $base_ref =~ ^[0-9a-f]{40}$ && $candidate_ref =~ ^[0-9a-f]{40}$ ]]
 [[ $base_sha =~ ^[0-9a-f]{64}$ && $candidate_sha =~ ^[0-9a-f]{64}$ && $expected_sha =~ ^[0-9a-f]{64}$ ]]
@@ -80,6 +80,35 @@ if [[ $scenario == failure-recovery ]]; then
     [[ $(sha256sum /etc/idleleo/conf/xray/config.json | awk '{print $1}') == "$config_sha" ]]
     systemctl is-active --quiet xray || { echo 'Original service was not restored after rejection' >&2; diagnose; exit 1; }
     echo "Legacy failure recovery passed: retained Xray $base and original config"
+    exit 0
+fi
+if [[ $scenario == fallback ]]; then
+    tested=$(jq -r '.xray_tested_version // empty' "$XRAY_VERSIONS_FILE")
+    [[ $tested =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+    echo "Checking the unmodified legacy tested-version fallback: $tested"
+    # Exercise the actual historical fallback with the candidate installer.
+    # This directly tests the Layer 2 function; it does not claim the full
+    # Layer 1 failure-to-Layer 2 transition has been exercised.
+    if ! (
+        export _TEST_MODE=1
+        set +u
+        source /etc/idleleo/install.sh >/dev/null 2>&1
+        unset _TEST_MODE
+        read_version
+        fallback_xray_to_tested_version
+    ) >"$log" 2>&1; then
+        echo 'Legacy tested-version fallback failed; candidate is not qualified' >&2
+        diagnose
+        exit 1
+    fi
+    [[ $(/usr/local/bin/xray version | awk 'NR==1 {sub(/^v/, "", $2); print $2}') == "$tested" ]]
+    [[ $(sha256sum /etc/idleleo/conf/xray/config.json | awk '{print $1}') == "$config_sha" ]]
+    systemctl is-active --quiet xray
+    user=$(systemctl show xray -p User --value)
+    [[ -n $user ]] || user=root
+    runuser -u "$user" -- test -r /usr/local/etc/xray/config.json
+    runuser -u "$user" -- test -w /var/log/xray
+    echo "Legacy tested-version fallback passed: Xray $tested, service account $user"
     exit 0
 fi
 if [[ $scenario == shell-first ]]; then
