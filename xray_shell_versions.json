@@ -1,8 +1,8 @@
 {
-  "update_date": "2026-10-29 14:04",
-  "shell_online_version": "3.2.10",
+  "update_date": "2026-10-30 18:26",
+  "shell_online_version": "3.2.11",
   "shell_tested_version": "2.8.3",
-  "shell_upgrade_details": "release: publish shell 3.2.10",
+  "shell_upgrade_details": "release: publish shell 3.2.11",
   "nginx_build_online_version": "2026.10.15.7679",
   "nginx_build_tested_version": "2026.07.15.6961",
   "nginx_online_version": "1.30.6",
@@ -18,6 +18,6 @@
   "openssl_tested_version": "3.6.0",
   "nginx_build_tested_at": "2026-07-30T05:57:14Z",
   "nginx_build_tested_note": "Promoted current latest published Nginx build Release v2026.07.15.6961 after manifest, SHA256SUMS, x86 and arm asset verification.",
-  "shell_release_sha256": "9323a226e0241f2e3d9229f607b6a9ef68e59697634d8ce0e6a8f4d1001c2e60",
+  "shell_release_sha256": "fb14ae7d45a18d7fdd070830b539e55512af8b60433aaa74cf005ed1de0a601d",
   "xray_verified_at": "2026-10-30T08:21:55Z"
 }
