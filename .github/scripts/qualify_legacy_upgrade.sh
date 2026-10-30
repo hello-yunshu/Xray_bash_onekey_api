@@ -10,7 +10,7 @@ candidate_ref=${XRAY_CANDIDATE_INSTALLER_REF:?}
 candidate_sha=${XRAY_CANDIDATE_INSTALLER_SHA256:?}
 expected_sha=${LEGACY_INSTALL_SHA256:?}
 scenario=${UPGRADE_SCENARIO:-direct}
-[[ $scenario == direct || $scenario == shell-first ]]
+[[ $scenario == fresh || $scenario == direct || $scenario == shell-first ]]
 [[ $base =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && $candidate =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
 [[ $base_ref =~ ^[0-9a-f]{40}$ && $candidate_ref =~ ^[0-9a-f]{40}$ ]]
 [[ $base_sha =~ ^[0-9a-f]{64}$ && $candidate_sha =~ ^[0-9a-f]{64}$ && $expected_sha =~ ^[0-9a-f]{64}$ ]]
@@ -30,9 +30,17 @@ diagnose() {
         echo 'diagnostic: Xray service inactive'
     fi
 }
-echo "Installing the legacy shell with Xray $base and the baseline installer"
-if ! XRAY_CANDIDATE_VERSION="$base" XRAY_CANDIDATE_INSTALLER_REF="$base_ref" \
-    XRAY_CANDIDATE_INSTALLER_SHA256="$base_sha" \
+install_version=$base
+install_ref=$base_ref
+install_sha=$base_sha
+if [[ $scenario == fresh ]]; then
+    install_version=$candidate
+    install_ref=$candidate_ref
+    install_sha=$candidate_sha
+fi
+echo "Installing the legacy shell with Xray $install_version and the selected exact installer"
+if ! XRAY_CANDIDATE_VERSION="$install_version" XRAY_CANDIDATE_INSTALLER_REF="$install_ref" \
+    XRAY_CANDIDATE_INSTALLER_SHA256="$install_sha" \
     bash "$legacy/.github/test/test_install.sh" reality >"$log" 2>&1; then
     echo 'Legacy baseline installation failed; candidate not evaluated' >&2
     diagnose
@@ -40,6 +48,15 @@ if ! XRAY_CANDIDATE_VERSION="$base" XRAY_CANDIDATE_INSTALLER_REF="$base_ref" \
 fi
 systemctl is-active --quiet xray
 config_sha=$(sha256sum /etc/idleleo/conf/xray/config.json | awk '{print $1}')
+if [[ $scenario == fresh ]]; then
+    [[ $(/usr/local/bin/xray version | awk 'NR==1 {sub(/^v/, "", $2); print $2}') == "$candidate" ]]
+    user=$(systemctl show xray -p User --value)
+    [[ -n $user ]] || user=root
+    runuser -u "$user" -- test -r /usr/local/etc/xray/config.json
+    runuser -u "$user" -- test -w /var/log/xray
+    echo "Legacy fresh install passed: Xray $candidate, service account $user"
+    exit 0
+fi
 if [[ $scenario == shell-first ]]; then
     expected_shell=$(jq -r '.shell_online_version // empty' "$XRAY_VERSIONS_FILE")
     expected_shell_sha=$(jq -r '.shell_release_sha256 // empty' "$XRAY_VERSIONS_FILE")
