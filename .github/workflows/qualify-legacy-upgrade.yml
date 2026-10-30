@@ -1,0 +1,91 @@
+name: Qualify legacy shell upgrades (evidence only)
+
+on:
+  pull_request:
+    paths:
+      - compatibility-baselines.json
+      - .github/scripts/qualify_legacy_upgrade.sh
+      - .github/scripts/verify_shell_baselines.py
+      - .github/workflows/qualify-legacy-upgrade.yml
+  workflow_dispatch:
+    inputs:
+      base_version:
+        description: Existing Xray version
+        required: true
+      base_installer_ref:
+        description: Existing installer commit SHA
+        required: true
+      base_installer_sha256:
+        description: Existing installer SHA-256
+        required: true
+      candidate_version:
+        description: Candidate Xray version
+        required: true
+      candidate_installer_ref:
+        description: Candidate installer commit SHA
+        required: true
+      candidate_installer_sha256:
+        description: Candidate installer SHA-256
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  baselines:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Verify released baseline identities
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/verify_shell_baselines.py compatibility-baselines.json
+      - id: list
+        run: echo "matrix=$(jq -c '.baselines' compatibility-baselines.json)" >> "$GITHUB_OUTPUT"
+
+  legacy-upgrade:
+    needs: baselines
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        baseline: ${{ fromJSON(needs.baselines.outputs.matrix) }}
+    name: Legacy upgrade (${{ matrix.baseline.version }})
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: api
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
+          repository: hello-yunshu/Xray_bash_onekey
+          ref: ${{ matrix.baseline.commit }}
+          path: legacy
+          persist-credentials: false
+      - name: Install and upgrade using the historical shell
+        env:
+          LEGACY_REPO: ${{ github.workspace }}/legacy
+          LEGACY_INSTALL_SHA256: ${{ matrix.baseline.installSha256 }}
+          XRAY_VERSIONS_FILE: ${{ github.workspace }}/api/xray_shell_versions.json
+          BASE_XRAY_VERSION: ${{ inputs.base_version }}
+          BASE_INSTALLER_REF: ${{ inputs.base_installer_ref }}
+          BASE_INSTALLER_SHA256: ${{ inputs.base_installer_sha256 }}
+          XRAY_CANDIDATE_VERSION: ${{ inputs.candidate_version }}
+          XRAY_CANDIDATE_INSTALLER_REF: ${{ inputs.candidate_installer_ref }}
+          XRAY_CANDIDATE_INSTALLER_SHA256: ${{ inputs.candidate_installer_sha256 }}
+        run: |
+          set -euo pipefail
+          # The PR smoke tests a known old installer against the current API
+          # tuple. Manual dispatch always supplies all six explicit inputs.
+          export BASE_XRAY_VERSION="${BASE_XRAY_VERSION:-26.3.27}"
+          export BASE_INSTALLER_REF="${BASE_INSTALLER_REF:-e741a4f56d368afbb9e5be3361b40c4552d3710d}"
+          export BASE_INSTALLER_SHA256="${BASE_INSTALLER_SHA256:-7f70c95f6b418da8b4f4883343d602964915e28748993870fd554383afdbe555}"
+          export XRAY_CANDIDATE_VERSION="${XRAY_CANDIDATE_VERSION:-$(jq -r .xray_online_version "$XRAY_VERSIONS_FILE")}"
+          export XRAY_CANDIDATE_INSTALLER_REF="${XRAY_CANDIDATE_INSTALLER_REF:-$(jq -r .xray_installer_ref "$XRAY_VERSIONS_FILE")}"
+          export XRAY_CANDIDATE_INSTALLER_SHA256="${XRAY_CANDIDATE_INSTALLER_SHA256:-$(jq -r .xray_installer_sha256 "$XRAY_VERSIONS_FILE")}"
+          sudo -E bash api/.github/scripts/qualify_legacy_upgrade.sh
