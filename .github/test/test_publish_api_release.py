@@ -149,6 +149,31 @@ class PublishTests(unittest.TestCase):
             run.assert_called_once()
             verify.assert_called_once()
 
+    def test_rollback_requires_explicit_flag_and_trusted_run(self):
+        newer = dict(self.new, xray_tested_version=self.old['xray_tested_version'])
+        older = dict(self.old)
+        base = {'xrayVersion': newer['xray_online_version'], 'installerRef': newer['xray_installer_ref'],
+                'installerSha256': newer['xray_installer_sha256'], 'testedVersion': newer['xray_tested_version']}
+        evidence = {'base': base, 'candidate': {'allowRollback': False}}
+        for name, value in (('expected', newer), ('candidate', older), ('evidence', evidence)):
+            (self.path / name).write_text(json.dumps(value))
+        with patch.object(module, 'api', return_value=self.ref), \
+             patch.object(module, 'source_file', side_effect=[newer, {}]), \
+             patch.object(module, 'exists') as exists:
+            with self.assertRaisesRegex(ValueError, 'downgrade'):
+                self.call()
+            exists.assert_not_called()
+        evidence['candidate']['allowRollback'] = True
+        (self.path / 'evidence').write_text(json.dumps(evidence))
+        with patch.object(module, 'api', return_value=self.ref), \
+             patch.object(module, 'source_file', side_effect=[newer, {}]), \
+             patch.object(module.prepare_api_release, 'prepare', return_value={'compatibility.json': b'{}', 'xray_shell_versions.json': b'{}'}), \
+             patch.object(module.verify_qualification_run, 'verify', side_effect=ValueError('untrusted')), \
+             patch.object(module, 'exists') as exists:
+            with self.assertRaisesRegex(ValueError, 'untrusted'):
+                self.call()
+            exists.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()
