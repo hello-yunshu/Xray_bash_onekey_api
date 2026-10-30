@@ -15,11 +15,25 @@ expected_sha=${LEGACY_INSTALL_SHA256:?}
 [[ $(sha256sum "$legacy/install.sh" | awk '{print $1}') == "$expected_sha" ]]
 log=$(mktemp)
 trap 'rm -f "$log"' EXIT
+diagnose() {
+    # Only print fixed classifications; raw installer logs can contain secrets.
+    if grep -qi 'permission denied' "$log" || journalctl -u xray --no-pager -n 40 2>/dev/null | grep -qi 'permission denied'; then
+        echo 'diagnostic: permission denied observed'
+    else
+        echo 'diagnostic: no permission-denied message observed'
+    fi
+    if systemctl is-active --quiet xray; then
+        echo 'diagnostic: Xray service active'
+    else
+        echo 'diagnostic: Xray service inactive'
+    fi
+}
 echo "Installing the legacy shell with Xray $base and the baseline installer"
 if ! XRAY_CANDIDATE_VERSION="$base" XRAY_CANDIDATE_INSTALLER_REF="$base_ref" \
     XRAY_CANDIDATE_INSTALLER_SHA256="$base_sha" \
     bash "$legacy/.github/test/test_install.sh" reality >"$log" 2>&1; then
     echo 'Legacy baseline installation failed; candidate not evaluated' >&2
+    diagnose
     exit 1
 fi
 systemctl is-active --quiet xray
@@ -29,6 +43,7 @@ if ! XRAY_CANDIDATE_VERSION="$candidate" XRAY_CANDIDATE_INSTALLER_REF="$candidat
     XRAY_CANDIDATE_INSTALLER_SHA256="$candidate_sha" \
     bash /etc/idleleo/install.sh --xray-update auto_update >"$log" 2>&1; then
     echo 'Legacy update failed; candidate is not qualified' >&2
+    diagnose
     exit 1
 fi
 [[ $(/usr/local/bin/xray version | awk 'NR==1 {sub(/^v/, "", $2); print $2}') == "$candidate" ]]
