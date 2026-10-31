@@ -18,7 +18,9 @@ class PrepareReleaseTests(unittest.TestCase):
                                                                'installSha256': 'd' * 64}]}
         result = {'conclusion': 'success', 'runId': 123, 'job': 'qualification',
                   'environment': {'os': 'ubuntu', 'arch': 'x86_64'}}
-        self.evidence = {'schemaVersion': 1, 'candidate': {'xrayVersion': '26.10.29',
+        self.evidence = {'schemaVersion': 1, 'offlineRecoveryJob': {'job': 'Recover broken 3.2.9 installation',
+                         'runId': 123, 'jobId': 400, 'coverage': 'permission-failure-shell-upgrade-candidate-recovery'},
+                         'candidate': {'xrayVersion': '26.10.29',
                          'installerRef': 'a' * 40, 'installerSha256': 'b' * 64},
                          'baselines': [{'version': '3.2.9', 'commit': 'c' * 40,
                          'installSha256': 'd' * 64, 'scenarios': {key: copy.deepcopy(result) for key in

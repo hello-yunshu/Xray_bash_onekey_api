@@ -16,6 +16,12 @@ check invokes the historical fallback function directly. A
 failed or missing required job prevents publication and promotion. A repeated
 run for the current pair does not create a new Release or Shell version.
 
+While 3.2.9 remains a supported baseline, qualification also reproduces its
+documented permission-related offline state, upgrades the installed Shell,
+and verifies recovery with the exact candidate pair. The release evidence
+records this job and its recovered binary identity; a missing or failed
+recovery check blocks promotion.
+
 After a trusted qualification succeeds, `promote-qualified-release.yml`
 publishes and verifies the API snapshot, compatibility evidence and hashes,
 then pushes the validated pair together. The push is not forced: a concurrent

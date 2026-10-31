@@ -21,6 +21,7 @@ class RunVerificationTests(unittest.TestCase):
                     'event': 'workflow_dispatch', 'status': 'completed', 'conclusion': 'success',
                     'run_attempt': 2, 'repository': {'full_name': self.repo}}
         self.jobs = [{'id': 44, 'name': 'qualify / Legacy upgrade (3.2.9, direct)', 'status': 'completed', 'conclusion': 'success'}]
+        self.jobs.append({'id': 400, 'name': 'Recover broken 3.2.9 installation', 'status': 'completed', 'conclusion': 'success'})
         self.jobs.extend({'id': 100 + i, 'name': f'Full install ({mode})', 'status': 'completed', 'conclusion': 'success'}
                          for i, mode in enumerate(module.MODES))
         self.jobs.extend({'id': 200 + i, 'name': f'Installer smoke ({scenario})', 'status': 'completed', 'conclusion': 'success'}
@@ -31,7 +32,9 @@ class RunVerificationTests(unittest.TestCase):
         mode_jobs = [{'mode': mode, 'job': f'Full install ({mode})', 'jobId': 100 + i, 'runId': 11} for i, mode in enumerate(module.MODES)]
         installer_jobs = [{'scenario': scenario, 'job': f'Installer smoke ({scenario})', 'jobId': 200 + i, 'runId': 11} for i, scenario in enumerate(module.INSTALLER_SCENARIOS)]
         bootstrap_jobs = [{'image': image, 'job': f'Minimal bootstrap ({image})', 'jobId': 300 + i, 'runId': 11, 'coverage': 'minimal-bootstrap-only'} for i, image in enumerate(module.BOOTSTRAP_IMAGES)]
-        self.evidence = json.dumps({'qualificationCommit': self.sha, 'runAttempt': 2, 'modeJobs': mode_jobs, 'installerJobs': installer_jobs, 'bootstrapJobs': bootstrap_jobs, 'baselines': [{'version': '3.2.9', 'scenarios': {'legacy-upgrade':
+        self.evidence = json.dumps({'qualificationCommit': self.sha, 'runAttempt': 2, 'modeJobs': mode_jobs, 'installerJobs': installer_jobs, 'bootstrapJobs': bootstrap_jobs,
+                       'offlineRecoveryJob': {'job': 'Recover broken 3.2.9 installation', 'jobId': 400, 'runId': 11, 'coverage': 'permission-failure-shell-upgrade-candidate-recovery'},
+                       'baselines': [{'version': '3.2.9', 'scenarios': {'legacy-upgrade':
                        {'runId': 11, 'jobId': 44, 'job': 'qualify / Legacy upgrade (3.2.9, direct)'}}}]}).encode()
 
     def verify(self):
@@ -50,6 +53,11 @@ class RunVerificationTests(unittest.TestCase):
 
     def test_exact_run_job_and_artifact(self):
         self.verify()
+
+    def test_rejects_unsuccessful_offline_recovery(self):
+        next(job for job in self.jobs if job['id'] == 400)['conclusion'] = 'failure'
+        with self.assertRaisesRegex(ValueError, 'offline recovery job'):
+            self.verify()
 
     def test_wrong_sha_or_untrusted_pr(self):
         self.run['head_sha'] = 'b' * 40

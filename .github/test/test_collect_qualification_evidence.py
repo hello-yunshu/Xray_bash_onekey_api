@@ -20,8 +20,11 @@ class CollectionTests(unittest.TestCase):
                       'referenceArchive': {'name': 'Xray-linux-64.zip', 'sha256': 'b' * 64},
                       'os': {'id': 'ubuntu', 'version': '24.04'}}
                       for scenario in module.SCENARIOS.values()}
+        self.facts['3.2.9-user-recovery'] = dict(self.facts['3.2.9-fresh'])
         self.jobs = [{'name': f'qualify / Legacy upgrade (3.2.9, {scenario})', 'status': 'completed',
                       'conclusion': 'success', 'id': i + 1} for i, scenario in enumerate(module.SCENARIOS.values())]
+        self.jobs.append({'name': 'Recover broken 3.2.9 installation', 'status': 'completed',
+                          'conclusion': 'success', 'id': 400})
         self.jobs.extend({'name': f'Full install ({mode})', 'status': 'completed',
                           'conclusion': 'success', 'id': i + 100} for i, mode in enumerate(module.MODES))
         self.jobs.extend({'name': f'Installer smoke ({scenario})', 'status': 'completed',
@@ -95,6 +98,17 @@ class CollectionTests(unittest.TestCase):
     def test_rejects_missing_runner_distribution(self):
         del self.facts['3.2.9-direct']['os']
         with self.assertRaisesRegex(ValueError, 'operating system identity'):
+            self.collect()
+
+    def test_rejects_failed_offline_recovery(self):
+        recovery = next(job for job in self.jobs if job['name'] == 'Recover broken 3.2.9 installation')
+        recovery['conclusion'] = 'failure'
+        with self.assertRaisesRegex(ValueError, 'offline recovery'):
+            self.collect()
+
+    def test_rejects_offline_recovery_with_different_binary(self):
+        self.facts['3.2.9-user-recovery']['sha256'] = '9' * 64
+        with self.assertRaisesRegex(ValueError, 'offline recovery binary differs'):
             self.collect()
 
 

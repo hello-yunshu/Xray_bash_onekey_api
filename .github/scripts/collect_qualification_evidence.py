@@ -113,9 +113,32 @@ def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt):
             raise ValueError(f'invalid job identity: {name}')
         bootstrap_jobs.append({'image': image, 'runId': run_id, 'jobId': job_id, 'job': name,
                                'coverage': 'minimal-bootstrap-only'})
+    recovery = None
+    if '3.2.9' in versions:
+        name = 'Recover broken 3.2.9 installation'
+        found = [job for job in jobs if job.get('name') == name]
+        if (len(found) != 1 or found[0].get('status') != 'completed' or
+                found[0].get('conclusion') != 'success' or
+                not isinstance(found[0].get('id'), int) or isinstance(found[0]['id'], bool) or found[0]['id'] < 1):
+            raise ValueError('missing or unsuccessful offline recovery job')
+        fact = facts.get('3.2.9-user-recovery', {})
+        archive = fact.get('referenceArchive', {})
+        os_info = fact.get('os', {})
+        if (fact.get('version') != candidate['xrayVersion'] or fact.get('arch') not in ('x86_64', 'aarch64') or
+                not re.fullmatch(r'[0-9a-f]{64}', str(fact.get('sha256', ''))) or
+                not re.fullmatch(r'[a-z0-9._-]+', str(os_info.get('id', ''))) or
+                not re.fullmatch(r'[a-zA-Z0-9._-]+', str(os_info.get('version', '')))):
+            raise ValueError('invalid offline recovery binary evidence')
+        identity = (fact['version'], fact['arch'])
+        expected_archive = {'x86_64': 'Xray-linux-64.zip', 'aarch64': 'Xray-linux-arm64-v8a.zip'}[fact['arch']]
+        if (observed.get(identity) != fact['sha256'] or archive.get('name') != expected_archive or
+                observed.get(('archive', *identity)) != archive.get('sha256')):
+            raise ValueError('offline recovery binary differs from candidate')
+        recovery = {'runId': run_id, 'jobId': found[0]['id'], 'job': name,
+                    'coverage': 'permission-failure-shell-upgrade-candidate-recovery', 'binary': fact}
     return {'schemaVersion': 1, 'candidate': candidate, 'base': base, 'qualificationCommit': commit,
             'runAttempt': attempt, 'modeJobs': modes, 'installerJobs': installer_jobs,
-            'bootstrapJobs': bootstrap_jobs, 'baselines': entries}
+            'bootstrapJobs': bootstrap_jobs, 'offlineRecoveryJob': recovery, 'baselines': entries}
 
 
 def main():
@@ -133,6 +156,10 @@ def main():
         for scenario in SCENARIOS.values():
             key = f"{baseline['version']}-{scenario}"
             artifact = a.binaries / f'qualification-binary-{a.run_id}-{a.attempt}-{key}' / 'xray-binary.json'
+            facts[key] = json.loads(artifact.read_text())
+        if baseline['version'] == '3.2.9':
+            key = '3.2.9-user-recovery'
+            artifact = a.binaries / f'qualification-binary-{a.run_id}-{a.attempt}-{key}' / 'recovered-xray.json'
             facts[key] = json.loads(artifact.read_text())
     evidence = collect(baselines, jobs, candidate, base, facts, a.run_id, a.commit, a.attempt)
     with a.output.open('x') as f:
