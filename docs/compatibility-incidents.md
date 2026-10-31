@@ -43,8 +43,10 @@ bash /etc/idleleo/install.sh --update auto_update
 bash /etc/idleleo/install.sh --xray-update auto_update
 ```
 
-This is evidence for that reproduced permission failure on the test runner,
-not a universal recovery procedure. A real host needs working administrative
+The test injected a pinned API snapshot and exact candidate metadata; a real
+host normally reads the current API recommendation, which may change. This is
+evidence for that reproduced permission failure on the test runner, not a
+universal recovery procedure. A real host needs working administrative
 access and outbound access to the required release resources; other causes or
 customizations may require separate diagnosis. Preserve the existing
 configuration before changes.
