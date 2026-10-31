@@ -62,11 +62,7 @@ jobs:
           python3 .github/scripts/publish_api_release.py \
             --tag "$tag" --evidence "$evidence" --expected "$tmp/expected.json" \
             --candidate "$tmp/candidate.json" --run-id "$QUAL_RUN" --attempt "$QUAL_ATTEMPT"
-          rollback_args=()
-          if [[ $(jq -r '.candidate.allowRollback // false' "$evidence") == true ]]; then
-            rollback_args+=(--allow-rollback)
-          fi
-          python3 .github/scripts/stage_candidate_metadata.py "${rollback_args[@]}" \
+          python3 .github/scripts/stage_candidate_metadata.py \
             --current xray_shell_versions.json --expected "$tmp/expected.json" \
             --candidate "$tmp/candidate.json" --output "$tmp/staged.json"
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern xray_shell_versions.json --dir "$tmp/release"

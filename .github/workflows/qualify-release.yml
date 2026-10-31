@@ -31,11 +31,6 @@ on:
         description: Optional proposed Xray fallback version; defaults to the current fallback
         required: false
         type: string
-      allow_rollback:
-        description: Explicitly allow a verified older recommended Xray version
-        required: false
-        type: boolean
-        default: false
   pull_request:
     paths:
       - compatibility-baselines.json
@@ -66,7 +61,6 @@ jobs:
       shell_sha: ${{ steps.resolve.outputs.shell_sha }}
       tested_version: ${{ steps.resolve.outputs.tested_version }}
       candidate_tested_version: ${{ steps.resolve.outputs.candidate_tested_version }}
-      allow_rollback: ${{ steps.resolve.outputs.allow_rollback }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -80,7 +74,6 @@ jobs:
           CANDIDATE_REF: ${{ inputs.candidate_installer_ref }}
           CANDIDATE_SHA: ${{ inputs.candidate_installer_sha256 }}
           CANDIDATE_TESTED_VERSION: ${{ inputs.candidate_tested_version }}
-          ALLOW_ROLLBACK: ${{ inputs.allow_rollback }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
@@ -108,8 +101,6 @@ jobs:
           fi
           CANDIDATE_TESTED_VERSION=${CANDIDATE_TESTED_VERSION:-$tested_version}
           [[ "$CANDIDATE_TESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          if [[ "$EVENT_NAME" != workflow_dispatch ]]; then ALLOW_ROLLBACK=false; fi
-          [[ "$ALLOW_ROLLBACK" == true || "$ALLOW_ROLLBACK" == false ]] || ALLOW_ROLLBACK=false
           shell_sha=$(jq -r '.shell_release_sha256' xray_shell_versions.json)
           shell_commit=$(jq -r --arg version "$shell_version" '[.baselines[] | select(.version == $version) | .commit] | if length == 1 then .[0] else empty end' compatibility-baselines.json)
           baseline_sha=$(jq -r --arg version "$shell_version" '[.baselines[] | select(.version == $version) | .installSha256] | if length == 1 then .[0] else empty end' compatibility-baselines.json)
@@ -126,7 +117,6 @@ jobs:
             echo "shell_sha=$shell_sha"
             echo "tested_version=$tested_version"
             echo "candidate_tested_version=$CANDIDATE_TESTED_VERSION"
-            echo "allow_rollback=$ALLOW_ROLLBACK"
           } >> "$GITHUB_OUTPUT"
 
   qualify:
@@ -252,12 +242,11 @@ jobs:
           BASE_SHA: ${{ needs.inputs.outputs.base_sha }}
           TESTED_VERSION: ${{ needs.inputs.outputs.tested_version }}
           CANDIDATE_TESTED_VERSION: ${{ needs.inputs.outputs.candidate_tested_version }}
-          ALLOW_ROLLBACK: ${{ needs.inputs.outputs.allow_rollback }}
         run: |
           set -euo pipefail
           mkdir -p evidence
-          jq -n --arg v "$CANDIDATE_VERSION" --arg ref "$CANDIDATE_REF" --arg sha "$CANDIDATE_SHA" --arg tested "$CANDIDATE_TESTED_VERSION" --argjson rollback "$ALLOW_ROLLBACK" \
-            '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha,testedVersion:$tested,allowRollback:$rollback}' > "$RUNNER_TEMP/candidate.json"
+          jq -n --arg v "$CANDIDATE_VERSION" --arg ref "$CANDIDATE_REF" --arg sha "$CANDIDATE_SHA" --arg tested "$CANDIDATE_TESTED_VERSION" \
+            '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha,testedVersion:$tested}' > "$RUNNER_TEMP/candidate.json"
           jq -n --arg v "$BASE_VERSION" --arg ref "$BASE_REF" --arg sha "$BASE_SHA" --arg tested "$TESTED_VERSION" \
             '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha,testedVersion:$tested}' > "$RUNNER_TEMP/base.json"
           while IFS= read -r version; do
@@ -278,7 +267,7 @@ jobs:
             done
           done < <(jq -er '.baselines[].version' compatibility-baselines.json)
           collected=false
-          for attempt in 1 2 3; do
+          for attempt in {1..12}; do
             rm -f evidence/compatibility.json
             if gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" | jq '[.[].jobs[]]' > "$RUNNER_TEMP/jobs.json" &&
               python3 .github/scripts/collect_qualification_evidence.py \
@@ -288,7 +277,7 @@ jobs:
               collected=true
               break
             fi
-            [[ "$attempt" == 3 ]] || sleep "$((attempt * 5))"
+            [[ "$attempt" == 12 ]] || sleep 10
           done
           [[ "$collected" == true ]] || { echo 'Qualification evidence collection failed' >&2; exit 1; }
       - uses: actions/upload-artifact@v4

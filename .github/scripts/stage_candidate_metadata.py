@@ -18,7 +18,7 @@ def version(value):
     return tuple(map(int, value.split('.')))
 
 
-def stage(current, expected, candidate, allow_rollback=False):
+def stage(current, expected, candidate):
     if not all(isinstance(v, dict) for v in (current, expected, candidate)):
         raise ValueError('metadata must be JSON objects')
     for obj in (current, expected, candidate):
@@ -28,7 +28,7 @@ def stage(current, expected, candidate, allow_rollback=False):
                 raise ValueError('invalid installer identity')
     if any(current[key] != expected[key] for key in FIELDS):
         raise ValueError('online candidate baseline changed')
-    if version(candidate[FIELDS[0]]) < version(current[FIELDS[0]]) and not allow_rollback:
+    if version(candidate[FIELDS[0]]) < version(current[FIELDS[0]]):
         raise ValueError('automatic downgrade refused')
     result = dict(current)
     result.update({key: candidate[key] for key in FIELDS})
@@ -39,10 +39,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('current', 'expected', 'candidate', 'output'):
         parser.add_argument('--' + name, type=Path, required=True)
-    parser.add_argument('--allow-rollback', action='store_true')
     args = parser.parse_args()
     documents = [json.loads(path.read_text()) for path in (args.current, args.expected, args.candidate)]
-    result = stage(*documents, allow_rollback=args.allow_rollback)
+    result = stage(*documents)
     with args.output.open('x') as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
         f.write('\n')
