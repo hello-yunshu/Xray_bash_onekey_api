@@ -10,7 +10,7 @@ candidate_ref=${XRAY_CANDIDATE_INSTALLER_REF:?}
 candidate_sha=${XRAY_CANDIDATE_INSTALLER_SHA256:?}
 expected_sha=${LEGACY_INSTALL_SHA256:?}
 scenario=${UPGRADE_SCENARIO:-direct}
-[[ $scenario == fresh || $scenario == direct || $scenario == shell-first || $scenario == reinstall || $scenario == failure-recovery || $scenario == restart-recovery || $scenario == fallback ]]
+[[ $scenario == user-recovery ]]
 [[ $base =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && $candidate =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
 [[ $base_ref =~ ^[0-9a-f]{40}$ && $candidate_ref =~ ^[0-9a-f]{40}$ ]]
 [[ $base_sha =~ ^[0-9a-f]{64}$ && $candidate_sha =~ ^[0-9a-f]{64}$ && $expected_sha =~ ^[0-9a-f]{64}$ ]]
@@ -84,6 +84,52 @@ if ! XRAY_CANDIDATE_VERSION="$install_version" XRAY_CANDIDATE_INSTALLER_REF="$in
 fi
 systemctl is-active --quiet xray
 config_sha=$(sha256sum /etc/idleleo/conf/xray/config.json | awk '{print $1}')
+if [[ $scenario == user-recovery ]]; then
+    echo 'Reproducing the known incompatible installer update'
+    if XRAY_CANDIDATE_VERSION="$candidate" XRAY_CANDIDATE_INSTALLER_REF="$candidate_ref" \
+        XRAY_CANDIDATE_INSTALLER_SHA256="$candidate_sha" \
+        bash /etc/idleleo/install.sh --xray-update auto_update >"$log" 2>&1; then
+        echo 'Expected the incompatible update to fail' >&2
+        exit 1
+    fi
+    diagnose
+    if systemctl is-active --quiet xray; then
+        echo 'Expected the reproduced failure to leave the service stopped' >&2
+        exit 1
+    fi
+    journal_text=$(journalctl -u xray --no-pager -n 40 2>/dev/null || true)
+    grep -qi 'permission denied' <<<"$journal_text" || {
+        echo 'Expected a permission-denied service failure' >&2
+        exit 1
+    }
+    echo 'Upgrading the existing Shell to the API-published release'
+    if ! bash /etc/idleleo/install.sh --update auto_update >"$log" 2>&1; then
+        echo 'Shell upgrade failed' >&2; diagnose; exit 1
+    fi
+    expected_shell_sha=$(jq -r '.shell_release_sha256 // empty' "$XRAY_VERSIONS_FILE")
+    [[ $expected_shell_sha =~ ^[0-9a-f]{64}$ ]]
+    [[ $(sha256sum /etc/idleleo/install.sh | awk '{print $1}') == "$expected_shell_sha" ]]
+    [[ $(sha256sum /etc/idleleo/conf/xray/config.json | awk '{print $1}') == "$config_sha" ]]
+    echo 'Running the repaired Shell update with the currently qualified installer'
+    good_version=$(jq -r '.xray_online_version' "$XRAY_VERSIONS_FILE")
+    good_ref=$(jq -r '.xray_installer_ref' "$XRAY_VERSIONS_FILE")
+    good_sha=$(jq -r '.xray_installer_sha256' "$XRAY_VERSIONS_FILE")
+    if ! XRAY_CANDIDATE_VERSION="$good_version" XRAY_CANDIDATE_INSTALLER_REF="$good_ref" \
+        XRAY_CANDIDATE_INSTALLER_SHA256="$good_sha" \
+        bash /etc/idleleo/install.sh --xray-update auto_update >"$log" 2>&1; then
+        echo 'Repaired Shell Xray update failed' >&2; diagnose; exit 1
+    fi
+    [[ $(/usr/local/bin/xray version | awk 'NR==1 {sub(/^v/, "", $2); print $2}') == "$good_version" ]]
+    [[ $(sha256sum /etc/idleleo/conf/xray/config.json | awk '{print $1}') == "$config_sha" ]]
+    systemctl is-active --quiet xray || { echo 'Xray service remains inactive' >&2; diagnose; exit 1; }
+    user=$(systemctl show xray -p User --value)
+    [[ -n $user ]] || user=root
+    runuser -u "$user" -- test -r /usr/local/etc/xray/config.json
+    runuser -u "$user" -- test -w /var/log/xray/access.log
+    runuser -u "$user" -- test -w /var/log/xray/error.log
+    echo "PASS: recovered Xray $good_version with unchanged config and active service"
+    exit 0
+fi
 if [[ $scenario == reinstall ]]; then
     [[ $(jq -r '.xray_version // empty' /etc/idleleo/conf/install_config.json) == "$candidate" ]]
     [[ $(/usr/local/bin/xray version | awk 'NR==1 {sub(/^v/, "", $2); print $2}') == "$candidate" ]]
