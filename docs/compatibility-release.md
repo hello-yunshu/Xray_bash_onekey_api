@@ -29,6 +29,15 @@ after successful qualification. Replacing an installer while keeping the
 same Xray version remains possible after the full qualification. Safe core
 rollback requires a future client-aware strategy.
 
+The publication guard only prevents lowering the shared recommendation. An
+older automatic updater can still install that recommendation over a newer
+core if the version recorded in its project configuration differs. An external
+official installer may not update that configuration, so the binary version
+alone does not determine whether the next scheduled update will run. The
+3.2.11 fresh-install path also installs the recommended version when the
+existing binary differs. Do not claim that this server-side guard prevents
+every possible client downgrade.
+
 To propose a new Xray `tested_version`, dispatch `qualify-release.yml` on
 `main` with the current online tuple as both base and candidate, and set
 `candidate_tested_version` to the proposed fallback. After all jobs succeed,
