@@ -42,6 +42,8 @@ a changed fallback candidate as evidence only.
 If any supported Shell fails, keep the existing shared tuple. A successful
 test for one release or environment is not a claim that other versions or
 environments are compatible. Historical broken installations need separate
-recovery; stopping future promotion does not repair them. GitHub Release
+recovery; stopping future promotion does not repair them. See the
+[observed compatibility failures](compatibility-incidents.md) for exact
+candidate and recovery details. GitHub Release
 immutability must be checked separately: the workflows reject mismatched
 existing assets, but this alone is not GitHub-enforced immutability.
