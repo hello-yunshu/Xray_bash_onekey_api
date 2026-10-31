@@ -16,6 +16,11 @@ check invokes the historical fallback function directly. A
 failed or missing required job prevents publication and promotion. A repeated
 run for the current pair does not create a new Release or Shell version.
 
+For released installer smoke harnesses with the known early-exiting version
+reader, CI copies that harness and changes only the reader to consume its
+input fully, avoiding a `pipefail`/SIGPIPE false failure. The released Shell
+and the installer under test are not altered.
+
 While 3.2.9 remains a supported baseline, qualification also reproduces its
 documented permission-related offline state, upgrades the installed Shell,
 and verifies recovery with the exact candidate pair. The release evidence
