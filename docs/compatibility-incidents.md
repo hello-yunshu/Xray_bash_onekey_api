@@ -26,3 +26,27 @@ installer `e741a4f56d368afbb9e5be3361b40c4552d3710d` pair in
 [API Release api-2026.10.30.41106539411](https://github.com/hello-yunshu/Xray_bash_onekey_api/releases/tag/api-2026.10.30.41106539411).
 This prevents the failed candidate being newly recommended; it does not repair
 an installation that is already offline.
+
+## Reproduced 3.2.9 recovery
+
+[Run 41158665207](https://github.com/hello-yunshu/Xray_bash_onekey_api/actions/runs/41158665207)
+started with a working Shell 3.2.9 installation, reproduced a permission-denied
+failure and inactive service using installer `e42df6a772e60dd7b058f852262c4dbeb0bc231d`,
+then updated the existing Shell to 3.2.11 and updated Xray using the qualified
+installer `e741a4f56d368afbb9e5be3361b40c4552d3710d`. The service became
+active and the original Xray configuration hash was unchanged.
+
+The runner used the existing managed installation and these root commands:
+
+```sh
+bash /etc/idleleo/install.sh --update auto_update
+bash /etc/idleleo/install.sh --xray-update auto_update
+```
+
+The test injected a pinned API snapshot and exact candidate metadata; a real
+host normally reads the current API recommendation, which may change. This is
+evidence for that reproduced permission failure on the test runner, not a
+universal recovery procedure. A real host needs working administrative
+access and outbound access to the required release resources; other causes or
+customizations may require separate diagnosis. Preserve the existing
+configuration before changes.
