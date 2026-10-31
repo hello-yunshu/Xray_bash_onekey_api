@@ -218,6 +218,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          path: api
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
           repository: hello-yunshu/Xray_bash_onekey
           ref: ${{ needs.inputs.outputs.shell_commit }}
           path: shell
@@ -234,7 +238,9 @@ jobs:
         run: |
           set -euo pipefail
           [[ $(sha256sum shell/install.sh | awk '{print $1}') == "$SHELL_SHA" ]]
-          sudo -E bash shell/.github/test/test_installer_candidate_smoke.sh "$SCENARIO"
+          python3 api/.github/scripts/prepare_installer_smoke.py \
+            shell/.github/test/test_installer_candidate_smoke.sh "$RUNNER_TEMP/installer-smoke.sh"
+          sudo -E bash "$RUNNER_TEMP/installer-smoke.sh" "$SCENARIO"
 
   minimal-bootstrap:
     needs: inputs
