@@ -55,10 +55,7 @@ def publish(tag, evidence_path, expected_path, candidate_path, run_id, attempt, 
     evidence_bytes = Path(evidence_path).read_bytes()
     evidence = json.loads(evidence_bytes)
     base = evidence.get('base', {})
-    allow_rollback = evidence.get('candidate', {}).get('allowRollback', False)
-    if not isinstance(allow_rollback, bool):
-        raise ValueError('invalid rollback authorization')
-    metadata = stage_candidate_metadata.stage(current, expected, candidate, allow_rollback=allow_rollback)
+    metadata = stage_candidate_metadata.stage(current, expected, candidate)
     if (base.get('xrayVersion'), base.get('installerRef'), base.get('installerSha256')) != tuple(expected.get(k) for k in stage_candidate_metadata.FIELDS):
         raise ValueError('qualification base differs from promotion baseline')
     if base.get('testedVersion') != current.get('xray_tested_version'):

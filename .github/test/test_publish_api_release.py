@@ -149,7 +149,7 @@ class PublishTests(unittest.TestCase):
             run.assert_called_once()
             verify.assert_called_once()
 
-    def test_rollback_requires_explicit_flag_and_trusted_run(self):
+    def test_rollback_flag_cannot_bypass_downgrade_guard(self):
         newer = dict(self.new, xray_tested_version=self.old['xray_tested_version'])
         older = dict(self.old)
         base = {'xrayVersion': newer['xray_online_version'], 'installerRef': newer['xray_installer_ref'],
@@ -168,10 +168,11 @@ class PublishTests(unittest.TestCase):
         with patch.object(module, 'api', return_value=self.ref), \
              patch.object(module, 'source_file', side_effect=[newer, {}]), \
              patch.object(module.prepare_api_release, 'prepare', return_value={'compatibility.json': b'{}', 'xray_shell_versions.json': b'{}'}), \
-             patch.object(module.verify_qualification_run, 'verify', side_effect=ValueError('untrusted')), \
+             patch.object(module.verify_qualification_run, 'verify') as verify, \
              patch.object(module, 'exists') as exists:
-            with self.assertRaisesRegex(ValueError, 'untrusted'):
+            with self.assertRaisesRegex(ValueError, 'downgrade'):
                 self.call()
+            verify.assert_not_called()
             exists.assert_not_called()
 
 
