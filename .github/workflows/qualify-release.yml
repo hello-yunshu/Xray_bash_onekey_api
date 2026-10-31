@@ -267,7 +267,7 @@ jobs:
             done
           done < <(jq -er '.baselines[].version' compatibility-baselines.json)
           collected=false
-          for attempt in 1 2 3; do
+          for attempt in {1..12}; do
             rm -f evidence/compatibility.json
             if gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" | jq '[.[].jobs[]]' > "$RUNNER_TEMP/jobs.json" &&
               python3 .github/scripts/collect_qualification_evidence.py \
@@ -277,7 +277,7 @@ jobs:
               collected=true
               break
             fi
-            [[ "$attempt" == 3 ]] || sleep "$((attempt * 5))"
+            [[ "$attempt" == 12 ]] || sleep 10
           done
           [[ "$collected" == true ]] || { echo 'Qualification evidence collection failed' >&2; exit 1; }
       - uses: actions/upload-artifact@v4
