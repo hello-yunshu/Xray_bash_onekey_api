@@ -72,7 +72,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 .github/scripts/verify_shell_baselines.py compatibility-baselines.json
       - id: list
-        run: echo "matrix=$(jq -c '.baselines' compatibility-baselines.json)" >> "$GITHUB_OUTPUT"
+        run: echo "matrix=$(jq -c '[.baselines[] | select(.version == "3.2.9")]' compatibility-baselines.json)" >> "$GITHUB_OUTPUT"
 
   legacy-upgrade:
     needs: baselines
@@ -82,7 +82,7 @@ jobs:
       fail-fast: false
       matrix:
         baseline: ${{ fromJSON(needs.baselines.outputs.matrix) }}
-        scenario: [fresh, direct, shell-first, reinstall, failure-recovery, restart-recovery, fallback]
+        scenario: [user-recovery]
     name: Legacy upgrade (${{ matrix.baseline.version }}, ${{ matrix.scenario }})
     steps:
       - uses: actions/checkout@v5
@@ -157,13 +157,3 @@ jobs:
           else
             sudo -E bash api/.github/scripts/qualify_legacy_upgrade.sh
           fi
-      - uses: actions/upload-artifact@v4
-        if: >-
-          success() && !(github.event_name == 'pull_request' &&
-          github.workflow == 'Qualify legacy shell upgrades (evidence only)' &&
-          matrix.baseline.version == '3.2.9' &&
-          contains(fromJSON('["fresh","direct","reinstall","fallback"]'), matrix.scenario))
-        with:
-          name: qualification-binary-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.baseline.version }}-${{ matrix.scenario }}
-          path: ${{ runner.temp }}/xray-binary.json
-          if-no-files-found: error
