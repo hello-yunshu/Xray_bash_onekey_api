@@ -64,6 +64,14 @@ def verify(evidence_bytes, repo, run_id, trusted_sha, attempt):
         matches = [job for job in jobs if job.get('id') == result.get('jobId')]
         if result.get('coverage') != 'minimal-bootstrap-only' or result.get('runId') != run_id or result.get('job') != name or len(matches) != 1 or matches[0].get('name') != name or matches[0].get('status') != 'completed' or matches[0].get('conclusion') != 'success':
             raise ValueError('minimal bootstrap job missing or unsuccessful')
+    if any(entry.get('version') == '3.2.9' for entry in evidence.get('baselines', [])):
+        recovery = evidence.get('offlineRecoveryJob') or {}
+        matches = [job for job in jobs if job.get('id') == recovery.get('jobId')]
+        if (recovery.get('runId') != run_id or recovery.get('job') != 'Recover broken 3.2.9 installation' or
+                recovery.get('coverage') != 'permission-failure-shell-upgrade-candidate-recovery' or
+                len(matches) != 1 or matches[0].get('name') != recovery.get('job') or
+                matches[0].get('status') != 'completed' or matches[0].get('conclusion') != 'success'):
+            raise ValueError('offline recovery job missing or unsuccessful')
     for baseline in evidence['baselines']:
         version = baseline['version']
         if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version):
