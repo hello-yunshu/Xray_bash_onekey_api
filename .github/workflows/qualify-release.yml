@@ -61,6 +61,7 @@ jobs:
       shell_sha: ${{ steps.resolve.outputs.shell_sha }}
       tested_version: ${{ steps.resolve.outputs.tested_version }}
       candidate_tested_version: ${{ steps.resolve.outputs.candidate_tested_version }}
+      recovery_baseline: ${{ steps.resolve.outputs.recovery_baseline }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -106,6 +107,7 @@ jobs:
           baseline_sha=$(jq -r --arg version "$shell_version" '[.baselines[] | select(.version == $version) | .installSha256] | if length == 1 then .[0] else empty end' compatibility-baselines.json)
           [[ "$shell_commit" =~ ^[0-9a-f]{40}$ && "$shell_sha" =~ ^[0-9a-f]{64}$ ]]
           [[ "$shell_sha" == "$baseline_sha" ]]
+          recovery_baseline=$(jq -c '[.baselines[] | select(.version == "3.2.9")] | if length == 1 then .[0] elif length == 0 then null else error("duplicate recovery baseline") end' compatibility-baselines.json)
           {
             echo "base_version=$BASE_VERSION"
             echo "base_ref=$BASE_REF"
@@ -117,6 +119,7 @@ jobs:
             echo "shell_sha=$shell_sha"
             echo "tested_version=$tested_version"
             echo "candidate_tested_version=$CANDIDATE_TESTED_VERSION"
+            echo "recovery_baseline=$recovery_baseline"
           } >> "$GITHUB_OUTPUT"
 
   qualify:
@@ -132,6 +135,43 @@ jobs:
       candidate_installer_ref: ${{ needs.inputs.outputs.candidate_ref }}
       candidate_installer_sha256: ${{ needs.inputs.outputs.candidate_sha }}
       candidate_tested_version: ${{ needs.inputs.outputs.candidate_tested_version }}
+
+  broken-legacy-recovery:
+    name: Recover broken 3.2.9 installation
+    needs: inputs
+    if: needs.inputs.outputs.recovery_baseline != 'null'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: api
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
+          repository: hello-yunshu/Xray_bash_onekey
+          ref: ${{ fromJSON(needs.inputs.outputs.recovery_baseline).commit }}
+          path: legacy
+          persist-credentials: false
+      - name: Recover the historical offline state with the candidate
+        env:
+          LEGACY_REPO: ${{ github.workspace }}/legacy
+          LEGACY_INSTALL_SHA256: ${{ fromJSON(needs.inputs.outputs.recovery_baseline).installSha256 }}
+          BASE_XRAY_VERSION: ${{ fromJSON(needs.inputs.outputs.recovery_baseline).initial.xrayVersion }}
+          BASE_INSTALLER_REF: ${{ fromJSON(needs.inputs.outputs.recovery_baseline).initial.installerRef }}
+          BASE_INSTALLER_SHA256: ${{ fromJSON(needs.inputs.outputs.recovery_baseline).initial.installerSha256 }}
+          XRAY_CANDIDATE_VERSION: ${{ needs.inputs.outputs.candidate_version }}
+          XRAY_CANDIDATE_INSTALLER_REF: ${{ needs.inputs.outputs.candidate_ref }}
+          XRAY_CANDIDATE_INSTALLER_SHA256: ${{ needs.inputs.outputs.candidate_sha }}
+          XRAY_VERSIONS_FILE: ${{ github.workspace }}/api/xray_shell_versions.json
+          QUALIFICATION_BINARY_EVIDENCE: ${{ runner.temp }}/recovered-xray.json
+          UPGRADE_SCENARIO: user-recovery
+        run: sudo -E bash api/.github/scripts/qualify_legacy_upgrade.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qualification-binary-${{ github.run_id }}-${{ github.run_attempt }}-3.2.9-user-recovery
+          path: ${{ runner.temp }}/recovered-xray.json
+          if-no-files-found: error
 
   full-install:
     needs: inputs
@@ -222,7 +262,11 @@ jobs:
           docker run --rm -v "$PWD/shell:/repo:ro" -e REPO_DIR=/repo "$IMAGE" bash /repo/.github/test/test_minimal_bootstrap.sh
 
   evidence:
-    needs: [inputs, qualify, full-install, installer-smoke, minimal-bootstrap]
+    needs: [inputs, qualify, broken-legacy-recovery, full-install, installer-smoke, minimal-bootstrap]
+    if: >-
+      always() && needs.inputs.result == 'success' && needs.qualify.result == 'success' &&
+      (needs.broken-legacy-recovery.result == 'success' || needs.broken-legacy-recovery.result == 'skipped') &&
+      needs.full-install.result == 'success' && needs.installer-smoke.result == 'success' && needs.minimal-bootstrap.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -251,7 +295,9 @@ jobs:
             '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha,testedVersion:$tested}' > "$RUNNER_TEMP/base.json"
           while IFS= read -r version; do
             [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-            for scenario in fresh direct shell-first reinstall failure-recovery restart-recovery fallback; do
+            scenarios=(fresh direct shell-first reinstall failure-recovery restart-recovery fallback)
+            [[ "$version" != 3.2.9 ]] || scenarios+=(user-recovery)
+            for scenario in "${scenarios[@]}"; do
               name="qualification-binary-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$version-$scenario"
               downloaded=false
               for attempt in 1 2 3; do

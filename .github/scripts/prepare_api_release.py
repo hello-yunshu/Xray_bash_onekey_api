@@ -32,6 +32,13 @@ def prepare(metadata, evidence, baselines):
     expected = {b['version']: (b['commit'], b['installSha256']) for b in baselines['baselines']}
     if len(expected) != len(baselines['baselines']) or not expected:
         raise ValueError('invalid baseline list')
+    if '3.2.9' in expected:
+        recovery = evidence.get('offlineRecoveryJob')
+        if (not isinstance(recovery, dict) or recovery.get('job') != 'Recover broken 3.2.9 installation' or
+                recovery.get('coverage') != 'permission-failure-shell-upgrade-candidate-recovery' or
+                any(not isinstance(recovery.get(k), int) or isinstance(recovery[k], bool) or recovery[k] < 1
+                    for k in ('runId', 'jobId'))):
+            raise ValueError('missing offline recovery evidence')
     required = {'fresh', 'legacy-upgrade', 'shell-then-upgrade', 'reinstall', 'failure-recovery', 'restart-recovery', 'fallback'}
     entries = evidence.get('baselines')
     if not isinstance(entries, list) or len(entries) != len(expected):
