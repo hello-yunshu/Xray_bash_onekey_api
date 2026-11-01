@@ -1,10 +1,12 @@
 name: Publish qualified API release
 
 on:
-  workflow_run:
-    workflows: ['Qualify candidate API release (read only)']
-    types: [completed]
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      qualification_run:
+        description: Successful main qualification run ID
+        required: true
+        type: string
 
 concurrency:
   group: promote-qualified-api-release
@@ -15,10 +17,7 @@ permissions:
 
 jobs:
   publish:
-    if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'workflow_dispatch' &&
-      github.event.workflow_run.head_repository.full_name == github.repository
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -26,15 +25,27 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Resolve successful trusted qualification
+        id: qualification
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUAL_RUN: ${{ inputs.qualification_run }}
+        run: |
+          set -euo pipefail
+          [[ "$QUAL_RUN" =~ ^[1-9][0-9]*$ ]]
+          python3 .github/scripts/resolve_qualification_for_publish.py --run-id "$QUAL_RUN"
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.qualification.outputs.sha }}
           fetch-depth: 0
       - name: Authenticate evidence, publish Release and promote the paired tuple
         env:
           GH_TOKEN: ${{ github.token }}
-          QUAL_RUN: ${{ github.event.workflow_run.id }}
-          QUAL_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          QUAL_SHA: ${{ github.event.workflow_run.head_sha }}
-          QUAL_STARTED: ${{ github.event.workflow_run.created_at }}
+          QUAL_RUN: ${{ steps.qualification.outputs.run_id }}
+          QUAL_ATTEMPT: ${{ steps.qualification.outputs.attempt }}
+          QUAL_SHA: ${{ steps.qualification.outputs.sha }}
+          QUAL_STARTED: ${{ steps.qualification.outputs.started }}
         run: |
           set -euo pipefail
           [[ "$QUAL_RUN" =~ ^[0-9]+$ && "$QUAL_ATTEMPT" =~ ^[0-9]+$ && "$QUAL_SHA" =~ ^[0-9a-f]{40}$ ]]

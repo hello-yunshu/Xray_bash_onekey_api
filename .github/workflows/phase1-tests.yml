@@ -65,3 +65,4 @@ jobs:
           python3 .github/test/test_upstream_automation.py
           python3 .github/test/test_select_trusted_initials.py
           python3 .github/test/test_record_qualified_initial.py
+          python3 .github/test/test_resolve_qualification_for_publish.py
