@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import datetime as dt
 import importlib.util
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -93,6 +94,31 @@ class SchedulerTests(unittest.TestCase):
         self.assertEqual(dispatch.call_count, 2)
         self.assertEqual(dispatch.call_args_list[0].args[0]['CANDIDATE_REF'], 'a')
         self.assertEqual(dispatch.call_args_list[1].args[0]['CANDIDATE_REF'], 'c')
+
+    def test_dispatch_arguments_and_persisted_key_prevent_repeat(self):
+        values = dict(BASE_VERSION='26.10.29', BASE_REF='a' * 40, BASE_SHA='b' * 64,
+                      CANDIDATE_VERSION='26.10.31', CANDIDATE_REF='c' * 40, CANDIDATE_SHA='d' * 64)
+        old = Path.cwd()
+        os.chdir(ROOT)
+        try:
+            with patch.object(scheduler.subprocess, 'check_output', return_value='[{"workflow_runs": []}]'), \
+                 patch.object(scheduler.subprocess, 'run') as run:
+                scheduler.dispatch(values, 'owner/repo')
+            args = run.call_args.args[0]
+            self.assertIn('candidate_version=26.10.31', args)
+            key = args[-1].split('=', 1)[1]
+            record = self.record(status='in_progress', key=key)
+            with patch.object(scheduler.subprocess, 'check_output', return_value=json.dumps([{'workflow_runs': [record]}])), \
+                 patch.object(scheduler.subprocess, 'run') as run:
+                scheduler.dispatch(values, 'owner/repo')
+                run.assert_not_called()
+            with patch.object(scheduler.subprocess, 'check_output', side_effect=subprocess.CalledProcessError(1, 'gh')), \
+                 patch.object(scheduler.subprocess, 'run') as run:
+                with self.assertRaises(subprocess.CalledProcessError):
+                    scheduler.dispatch(values, 'owner/repo')
+                run.assert_not_called()
+        finally:
+            os.chdir(old)
 
     def test_workflow_health_failure_triggers_discovery_and_preserves_gate(self):
         watch = (ROOT / '.github/workflows/watch-upstreams.yml').read_text()
