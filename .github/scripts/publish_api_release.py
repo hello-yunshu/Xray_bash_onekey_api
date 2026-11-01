@@ -34,6 +34,25 @@ def exists(path):
     raise RuntimeError('GitHub lookup failed; refusing to create a release')
 
 
+def releases():
+    """Every release, drafts included.
+
+    `GET /releases/tags/{tag}` answers 404 for draft releases and a draft owns
+    no git tag ref, so a draft created by this script can only be found again
+    through the collection listing.
+    """
+    pages = json.loads(subprocess.check_output(
+        ['gh', 'api', '--paginate', '--slurp', f'repos/{REPO}/releases?per_page=100'], text=True))
+    return [release for page in pages for release in page]
+
+
+def find_release(tag):
+    matches = [release for release in releases() if release.get('tag_name') == tag]
+    if len(matches) > 1:
+        raise ValueError('duplicate release tag')
+    return matches[0] if matches else None
+
+
 def source_file(path, sha):
     response = api(f'repos/{REPO}/contents/{path}?ref={sha}')
     if response.get('encoding') != 'base64':
@@ -43,7 +62,9 @@ def source_file(path, sha):
 
 def complete_draft(tag, sha, directory, marker):
     """Resume only our exact draft; never overwrite an existing asset."""
-    release = api(f'repos/{REPO}/releases/tags/{tag}')
+    release = find_release(tag)
+    if release is None:
+        raise ValueError('draft release is missing before completion')
     if not release.get('draft'):
         return
     if (release.get('body') != marker or release.get('target_commitish') != sha
@@ -120,8 +141,7 @@ def publish(tag, evidence_path, expected_path, candidate_path, run_id, attempt, 
         marker = ('Qualified API metadata snapshot.\n'
                   f'qualification={run_id}; commit={sha}; sha256sums='
                   f'{hashlib.sha256(files["SHA256SUMS"]).hexdigest()}')
-        release_path = f'repos/{REPO}/releases/tags/{tag}'
-        if not exists(release_path):
+        if find_release(tag) is None:
             # A pre-existing tag without a Release is never adopted blindly.
             if exists(f'repos/{REPO}/git/ref/tags/{tag}'):
                 raise ValueError('release tag already exists without a matching release')

@@ -64,7 +64,7 @@ concurrency:
 
 jobs:
   baselines:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.list.outputs.matrix }}
     steps:
@@ -90,7 +90,7 @@ jobs:
 
   legacy-upgrade:
     needs: baselines
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -171,7 +171,7 @@ jobs:
           else
             sudo -E bash api/.github/scripts/qualify_legacy_upgrade.sh
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: >-
           success() && !(github.event_name == 'pull_request' &&
           github.workflow == 'Qualify legacy shell upgrades (evidence only)' &&

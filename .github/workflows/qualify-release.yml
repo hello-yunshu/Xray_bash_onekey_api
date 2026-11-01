@@ -53,7 +53,7 @@ concurrency:
 
 jobs:
   inputs:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       base_version: ${{ steps.resolve.outputs.base_version }}
       base_ref: ${{ steps.resolve.outputs.base_ref }}
@@ -79,7 +79,7 @@ jobs:
           set -euo pipefail
           [[ "$AUTOMATION_KEY" =~ ^auto-xray-[0-9a-f]{64}$ ]]
           printf '%s\n' "$AUTOMATION_KEY" > "$RUNNER_TEMP/qualification-key.txt"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: inputs.automation_key != ''
         with:
           name: qualification-key-${{ inputs.automation_key }}
@@ -167,7 +167,7 @@ jobs:
     name: Recover broken 3.2.9 installation
     needs: inputs
     if: needs.inputs.outputs.recovery_baseline != 'null'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
@@ -194,7 +194,7 @@ jobs:
           QUALIFICATION_BINARY_EVIDENCE: ${{ runner.temp }}/recovered-xray.json
           UPGRADE_SCENARIO: user-recovery
         run: sudo -E bash api/.github/scripts/qualify_legacy_upgrade.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: qualification-binary-${{ github.run_id }}-${{ github.run_attempt }}-3.2.9-user-recovery
           path: ${{ runner.temp }}/recovered-xray.json
@@ -202,7 +202,7 @@ jobs:
 
   full-install:
     needs: inputs
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -235,7 +235,7 @@ jobs:
 
   installer-smoke:
     needs: inputs
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -271,7 +271,7 @@ jobs:
 
   minimal-bootstrap:
     needs: inputs
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     strategy:
       fail-fast: false
@@ -300,7 +300,7 @@ jobs:
       always() && needs.inputs.result == 'success' && needs.qualify.result == 'success' &&
       (needs.broken-legacy-recovery.result == 'success' || needs.broken-legacy-recovery.result == 'skipped') &&
       needs.full-install.result == 'success' && needs.installer-smoke.result == 'success' && needs.minimal-bootstrap.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       actions: read
@@ -361,7 +361,7 @@ jobs:
             [[ "$attempt" == 12 ]] || sleep 10
           done
           [[ "$collected" == true ]] || { echo 'Qualification evidence collection failed' >&2; exit 1; }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: qualification-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: evidence/compatibility.json
@@ -370,7 +370,7 @@ jobs:
   request-publication:
     needs: evidence
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
