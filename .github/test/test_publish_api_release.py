@@ -5,7 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / '.github/scripts'))
@@ -86,10 +86,11 @@ class PublishTests(unittest.TestCase):
              patch.object(module.prepare_api_release, 'prepare', return_value={'compatibility.json': b'{}', 'xray_shell_versions.json': b'{}'}), \
              patch.object(module.verify_qualification_run, 'verify'), \
              patch.object(module, 'find_release', return_value=None), \
-             patch.object(module, 'exists', return_value=True), \
+             patch.object(module, 'exists', return_value=True) as exists, \
              patch.object(module.subprocess, 'run') as run:
             with self.assertRaisesRegex(ValueError, 'tag already exists'):
                 self.call()
+            exists.assert_called_once_with('repos/hello-yunshu/Xray_bash_onekey_api/git/ref/tags/api-2026.10.30.1')
             run.assert_not_called()
 
     def test_existing_release_is_verified_without_write(self):
@@ -105,7 +106,9 @@ class PublishTests(unittest.TestCase):
             self.call()
             exists.assert_not_called()
             complete.assert_called_once()
-            verify.assert_called_once()
+            # The tag ref only appears once the draft is published, so the
+            # post-publication read has to tolerate a settling replica.
+            verify.assert_called_once_with('api-2026.10.30.1', 'e' * 40, ANY, attempts=10)
             run.assert_not_called()
 
     def test_main_movement_stops_before_release_creation(self):
@@ -181,7 +184,8 @@ class PublishTests(unittest.TestCase):
         self.assertEqual({Path(p).name for p in upload[6:]},
                          {'SHA256SUMS', 'xray_shell_versions.json'})
         self.assertNotIn('--clobber', upload)
-        verify.assert_called_once_with('api-2026.10.30.1', 'e' * 40, directory, allow_draft=True)
+        verify.assert_called_once_with('api-2026.10.30.1', 'e' * 40, directory,
+                                      allow_draft=True, attempts=10)
         self.assertEqual(calls[-1][2], 'edit')
 
     def test_draft_identity_and_bytes_fail_before_write(self):

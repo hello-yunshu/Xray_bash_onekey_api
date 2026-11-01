@@ -79,6 +79,45 @@ class VerifyReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'SHA256SUMS mismatch'):
             self.verify()
 
+    def readable(self, views, *, assets_ready_after=1):
+        """Answer `gh release view` with a listing that settles after N reads."""
+        def command(*args):
+            if args[1] == 'api':
+                return json.dumps(self.ref)
+            views.append(len(views) + 1)
+            meta = dict(self.meta)
+            if len(views) < assets_ready_after:
+                meta['assets'] = []
+            return json.dumps(meta)
+
+        def download(args, **kwargs):
+            target = Path(args[args.index('--dir') + 1])
+            for name in module.ASSETS:
+                (target / name).write_bytes((self.directory / name).read_bytes())
+
+        return command, download
+
+    def test_polls_a_listing_that_lags_the_write(self):
+        views = []
+        command, download = self.readable(views, assets_ready_after=2)
+        with patch.object(module, 'command', side_effect=command), \
+             patch.object(module.subprocess, 'run', side_effect=download), \
+             patch.object(module.time, 'sleep') as sleep:
+            module.verify(self.tag, self.commit, self.directory, attempts=3)
+        self.assertEqual(len(views), 2)
+        self.assertEqual(sleep.call_count, 1)
+
+    def test_gives_up_after_the_last_attempt(self):
+        views = []
+        command, download = self.readable(views, assets_ready_after=99)
+        with patch.object(module, 'command', side_effect=command), \
+             patch.object(module.subprocess, 'run', side_effect=download), \
+             patch.object(module.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(ValueError, 'asset list mismatch'):
+                module.verify(self.tag, self.commit, self.directory, attempts=2)
+        self.assertEqual(len(views), 2)
+        self.assertEqual(sleep.call_count, 1)
+
 
 if __name__ == '__main__':
     unittest.main()
