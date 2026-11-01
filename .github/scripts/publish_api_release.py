@@ -105,7 +105,7 @@ def complete_draft(tag, sha, directory, marker):
         subprocess.run(['gh', 'release', 'upload', tag, '--repo', REPO,
                         *(str(directory / name) for name in missing)], check=True)
     # Verify complete bytes and tag before exposing the snapshot publicly.
-    verify_api_release.verify(tag, sha, directory, allow_draft=True)
+    verify_api_release.verify(tag, sha, directory, allow_draft=True, attempts=10)
     subprocess.run(['gh', 'release', 'edit', tag, '--repo', REPO,
                     '--draft=false'], check=True)
 
@@ -162,7 +162,8 @@ def publish(tag, evidence_path, expected_path, candidate_path, run_id, attempt, 
                             '--target', sha, '--title', f'API {tag}',
                             '--notes', marker, '--draft'], check=True)
         complete_draft(tag, sha, directory, marker)
-        verify_api_release.verify(tag, sha, directory)
+        # The tag ref appears only once the draft is published, so poll it too.
+        verify_api_release.verify(tag, sha, directory, attempts=10)
 
 
 def main():

@@ -6,6 +6,7 @@ import json
 import re
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 REPO = 'hello-yunshu/Xray_bash_onekey_api'
@@ -16,7 +17,23 @@ def command(*args):
     return subprocess.check_output(args, text=True)
 
 
-def verify(tag, commit, directory, *, allow_draft=False):
+def verify(tag, commit, directory, *, allow_draft=False, attempts=1, delay=1.0):
+    """Verify a release, optionally re-reading it while a write settles.
+
+    Both the asset listing and the tag ref are read-after-write, so a caller
+    that just uploaded or published passes `attempts` to poll instead of
+    trusting the replica that answered a fraction of a second later.
+    """
+    for attempt in range(attempts):
+        try:
+            return _verify(tag, commit, directory, allow_draft=allow_draft)
+        except ValueError:
+            if attempt + 1 >= attempts:
+                raise
+            time.sleep(delay)
+
+
+def _verify(tag, commit, directory, *, allow_draft=False):
     if not re.fullmatch(r'api-[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]+', tag):
         raise ValueError('invalid API release tag')
     if not re.fullmatch(r'[0-9a-f]{40}', commit):
