@@ -2056,15 +2056,15 @@ TMPDIR_TEST=$(setup_temp_repo)
 http_get() { mock_http_all_fail "$@"; }
 
 # Save original checksums
-OLD_TESTED_HASH=$(jq -S . "$TMPDIR_TEST/tested_versions.json" | md5)
-OLD_VERSIONS_HASH=$(jq -S . "$TMPDIR_TEST/xray_shell_versions.json" | md5)
+OLD_TESTED_HASH=$(jq -S . "$TMPDIR_TEST/tested_versions.json" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())') || exit 1
+OLD_VERSIONS_HASH=$(jq -S . "$TMPDIR_TEST/xray_shell_versions.json" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())') || exit 1
 
 promote_component "xray" "25.12.8" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>/dev/null
 EXIT_CODE=$?
 assert_rejected "T22: promotion rejected" "$EXIT_CODE"
 
-NEW_TESTED_HASH=$(jq -S . "$TMPDIR_TEST/tested_versions.json" | md5)
-NEW_VERSIONS_HASH=$(jq -S . "$TMPDIR_TEST/xray_shell_versions.json" | md5)
+NEW_TESTED_HASH=$(jq -S . "$TMPDIR_TEST/tested_versions.json" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())') || exit 1
+NEW_VERSIONS_HASH=$(jq -S . "$TMPDIR_TEST/xray_shell_versions.json" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())') || exit 1
 assert_eq "T22: tested_versions.json restored" "$OLD_TESTED_HASH" "$NEW_TESTED_HASH"
 assert_eq "T22: xray_shell_versions.json restored" "$OLD_VERSIONS_HASH" "$NEW_VERSIONS_HASH"
 
@@ -2082,8 +2082,8 @@ mv "$TMPDIR_TEST/xray_shell_versions.json.tmp" "$TMPDIR_TEST/xray_shell_versions
 http_get() { mock_http_tag_exists "$@"; }
 
 # Save original (inconsistent) state
-OLD_TESTED_HASH=$(jq -S . "$TMPDIR_TEST/tested_versions.json" | md5)
-OLD_VERSIONS_HASH=$(jq -S . "$TMPDIR_TEST/xray_shell_versions.json" | md5)
+OLD_TESTED_HASH=$(jq -S . "$TMPDIR_TEST/tested_versions.json" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())') || exit 1
+OLD_VERSIONS_HASH=$(jq -S . "$TMPDIR_TEST/xray_shell_versions.json" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())') || exit 1
 
 # Promote nginx — should fail at consistency check because xray is inconsistent
 OUTPUT=$(promote_component "nginx" "1.28.1" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>&1)
@@ -2092,8 +2092,8 @@ assert_rejected "T23: inconsistent files rejected" "$EXIT_CODE"
 assert_contains "T23: error mentions consistency" "consistency" "$OUTPUT"
 
 # Verify both files restored to original (inconsistent) state
-NEW_TESTED_HASH=$(jq -S . "$TMPDIR_TEST/tested_versions.json" | md5)
-NEW_VERSIONS_HASH=$(jq -S . "$TMPDIR_TEST/xray_shell_versions.json" | md5)
+NEW_TESTED_HASH=$(jq -S . "$TMPDIR_TEST/tested_versions.json" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())') || exit 1
+NEW_VERSIONS_HASH=$(jq -S . "$TMPDIR_TEST/xray_shell_versions.json" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())') || exit 1
 assert_eq "T23: tested_versions.json restored after consistency fail" "$OLD_TESTED_HASH" "$NEW_TESTED_HASH"
 assert_eq "T23: xray_shell_versions.json restored after consistency fail" "$OLD_VERSIONS_HASH" "$NEW_VERSIONS_HASH"
 
@@ -2103,15 +2103,20 @@ cleanup_temp_repo "$TMPDIR_TEST"
 TMPDIR_TEST=$(setup_temp_repo)
 http_get() { mock_http_xray_valid "$@"; }
 
-OLD_TESTED_HASH=$(jq -S . "$TMPDIR_TEST/tested_versions.json" | md5)
+OLD_TESTED_HASH=$(jq -S . "$TMPDIR_TEST/tested_versions.json" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())') || exit 1
+cp "$TMPDIR_TEST/xray_shell_versions.json" "$TMPDIR_TEST/versions.before"
 promote_component "xray" "25.12.8" "" "$TMPDIR_TEST/tested_versions.json" "$TMPDIR_TEST/xray_shell_versions.json" 2>/dev/null
 EXIT_CODE=$?
 assert_promoted "T24: promote same version succeeds" "$EXIT_CODE"
+if cmp -s "$TMPDIR_TEST/versions.before" "$TMPDIR_TEST/xray_shell_versions.json"; then
+  pass "T24: metadata and timestamp unchanged"
+else
+  fail "T24: metadata and timestamp changed"
+fi
 
 # tested_versions.json should be unchanged (same version)
-NEW_TESTED_HASH=$(jq -S . "$TMPDIR_TEST/tested_versions.json" | md5)
-# Note: xray_shell_versions.json WILL change (tested_at is updated)
-# but tested_versions.json should be byte-identical
+NEW_TESTED_HASH=$(jq -S . "$TMPDIR_TEST/tested_versions.json" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())') || exit 1
+# Repeated promotion preserves both files, including tested_at.
 assert_eq "T24: tested_versions.json unchanged (same version)" "$OLD_TESTED_HASH" "$NEW_TESTED_HASH"
 
 cleanup_temp_repo "$TMPDIR_TEST"

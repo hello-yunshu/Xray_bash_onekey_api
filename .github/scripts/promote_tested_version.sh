@@ -671,6 +671,17 @@ promote_component() {
     return 1
   fi
 
+  if ! check_consistency "$tested_file" "$versions_file" >&2; then
+    rm -f "$snap_tested" "$snap_versions"
+    return 1
+  fi
+  if [ "$("$JQ_BIN" -r --arg c "$component" '.[$c]' "$tested_file")" = "$version" ] &&
+     { [ -z "$sanitized_note" ] || [ "$sanitized_note" = "$("$JQ_BIN" -r --arg f "${component}_tested_note" '.[$f] // ""' "$versions_file")" ]; }; then
+    echo "Already promoted: $component $version" >&2
+    rm -f "$snap_tested" "$snap_versions"
+    return 0
+  fi
+
   # --- Update tested_versions.json (single component only) ---
   local updated_at
   updated_at=${PROMOTION_TIMESTAMP:-$(date -u '+%Y-%m-%dT%H:%M:%SZ')}

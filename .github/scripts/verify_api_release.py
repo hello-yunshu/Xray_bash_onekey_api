@@ -16,7 +16,7 @@ def command(*args):
     return subprocess.check_output(args, text=True)
 
 
-def verify(tag, commit, directory):
+def verify(tag, commit, directory, *, allow_draft=False):
     if not re.fullmatch(r'api-[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]+', tag):
         raise ValueError('invalid API release tag')
     if not re.fullmatch(r'[0-9a-f]{40}', commit):
@@ -29,17 +29,22 @@ def verify(tag, commit, directory):
     if (local / 'SHA256SUMS').read_text() != expected_sums:
         raise ValueError('expected SHA256SUMS mismatch')
     meta = json.loads(command('gh', 'release', 'view', tag, '--repo', REPO,
-                              '--json', 'tagName,isDraft,isPrerelease,assets'))
-    if meta['tagName'] != tag or meta['isDraft'] or meta['isPrerelease']:
+                              '--json', 'tagName,isDraft,isPrerelease,assets,targetCommitish'))
+    if meta['tagName'] != tag or (meta['isDraft'] and not allow_draft) or meta['isPrerelease']:
         raise ValueError('release is not the expected stable tag')
     names = [a['name'] for a in meta['assets']]
     if set(names) != ASSETS or len(names) != len(ASSETS):
         raise ValueError('release asset list mismatch')
-    ref = json.loads(command('gh', 'api', f'repos/{REPO}/git/ref/tags/{tag}'))['object']
-    if ref['type'] == 'tag':
-        ref = json.loads(command('gh', 'api', f'repos/{REPO}/git/tags/{ref["sha"]}'))['object']
-    if ref['type'] != 'commit' or ref['sha'] != commit:
-        raise ValueError('release tag target mismatch')
+    if meta['isDraft'] and allow_draft:
+        # GitHub may create the tag only when the draft is published.
+        if meta.get('targetCommitish') != commit:
+            raise ValueError('draft target mismatch')
+    else:
+        ref = json.loads(command('gh', 'api', f'repos/{REPO}/git/ref/tags/{tag}'))['object']
+        if ref['type'] == 'tag':
+            ref = json.loads(command('gh', 'api', f'repos/{REPO}/git/tags/{ref["sha"]}'))['object']
+        if ref['type'] != 'commit' or ref['sha'] != commit:
+            raise ValueError('release tag target mismatch')
     with tempfile.TemporaryDirectory() as tmp:
         subprocess.run(['gh', 'release', 'download', tag, '--repo', REPO, '--dir', tmp], check=True)
         actual = Path(tmp)
