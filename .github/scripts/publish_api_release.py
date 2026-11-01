@@ -11,6 +11,7 @@ import json
 import re
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 import prepare_api_release
@@ -46,11 +47,21 @@ def releases():
     return [release for page in pages for release in page]
 
 
-def find_release(tag):
-    matches = [release for release in releases() if release.get('tag_name') == tag]
-    if len(matches) > 1:
-        raise ValueError('duplicate release tag')
-    return matches[0] if matches else None
+def find_release(tag, attempts=1, delay=1.0):
+    """Resolve a tag to its release, drafts included.
+
+    A release created a fraction of a second ago can still be absent from the
+    collection, so callers that just wrote pass `attempts` to poll briefly.
+    """
+    for attempt in range(attempts):
+        matches = [release for release in releases() if release.get('tag_name') == tag]
+        if len(matches) > 1:
+            raise ValueError('duplicate release tag')
+        if matches:
+            return matches[0]
+        if attempt + 1 < attempts:
+            time.sleep(delay)
+    return None
 
 
 def source_file(path, sha):
@@ -62,7 +73,9 @@ def source_file(path, sha):
 
 def complete_draft(tag, sha, directory, marker):
     """Resume only our exact draft; never overwrite an existing asset."""
-    release = find_release(tag)
+    # Creation and asset upload are read-after-write; poll instead of trusting
+    # a listing taken microseconds after the draft appeared.
+    release = find_release(tag, attempts=10)
     if release is None:
         raise ValueError('draft release is missing before completion')
     if not release.get('draft'):
