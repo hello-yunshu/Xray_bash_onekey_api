@@ -63,3 +63,4 @@ jobs:
           python3 .github/test/test_prepare_installer_smoke.py
           python3 .github/test/test_verify_tested_promotion.py
           python3 .github/test/test_upstream_automation.py
+          python3 .github/test/test_select_trusted_initials.py

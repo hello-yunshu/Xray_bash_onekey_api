@@ -6,6 +6,8 @@ import json
 import re
 from pathlib import Path
 
+import select_trusted_initials
+
 
 def sha(data):
     return hashlib.sha256(data).hexdigest()
@@ -52,7 +54,7 @@ def prepare(metadata, evidence, baselines):
         if (entry.get('commit'), entry.get('installSha256')) != expected[version]:
             raise ValueError('baseline identity mismatch')
         configured = next(b for b in baselines['baselines'] if b['version'] == version)
-        if not isinstance(configured.get('initial'), dict) or entry.get('initial') != configured['initial']:
+        if not isinstance(configured.get('initial'), dict) or entry.get('initial') not in select_trusted_initials.trusted(baselines, configured):
             raise ValueError('initial baseline tuple mismatch')
         scenarios = entry.get('scenarios')
         if not isinstance(scenarios, dict) or set(scenarios) != required:
