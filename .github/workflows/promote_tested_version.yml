@@ -51,6 +51,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      - name: Install jq
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq jq
+
       - name: Detect completed promotion
         id: promotion
         env:
@@ -72,10 +75,6 @@ jobs:
           else
             echo "needed=true" >> "$GITHUB_OUTPUT"
           fi
-
-      - name: Install jq
-        if: steps.promotion.outputs.needed == 'true'
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq jq
 
       - name: Authenticate Xray fallback qualification
         id: qualification
@@ -141,7 +140,7 @@ jobs:
             fi
           done
 
-          # Verify both files have at least one change
+          # A note-only promotion may leave tested_versions.json unchanged.
           if ! git diff --quiet tested_versions.json; then
             echo "✅ tested_versions.json has changes"
           else
