@@ -51,12 +51,35 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      - name: Detect completed promotion
+        id: promotion
+        env:
+          COMPONENT: ${{ inputs.component }}
+          VERSION: ${{ inputs.version }}
+          NOTE: ${{ inputs.note }}
+        run: |
+          set -euo pipefail
+          source .github/scripts/promote_tested_version.sh
+          validate_component "$COMPONENT"
+          validate_version_format "$COMPONENT" "$VERSION"
+          check_consistency tested_versions.json xray_shell_versions.json
+          sanitized_note=$(sanitize_note "$NOTE")
+          current_note=$(jq -r --arg f "${COMPONENT}_tested_note" '.[$f] // ""' xray_shell_versions.json)
+          if [[ $(jq -r --arg c "$COMPONENT" '.[$c]' tested_versions.json) == "$VERSION" ]] &&
+             [[ -z "$sanitized_note" || "$sanitized_note" == "$current_note" ]]; then
+            echo "Already promoted: $COMPONENT $VERSION"
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Install jq
+        if: steps.promotion.outputs.needed == 'true'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq jq
 
       - name: Authenticate Xray fallback qualification
         id: qualification
-        if: inputs.component == 'xray'
+        if: steps.promotion.outputs.needed == 'true' && inputs.component == 'xray'
         env:
           GH_TOKEN: ${{ github.token }}
           QUAL_RUN: ${{ inputs.qualification_run }}
@@ -79,9 +102,11 @@ jobs:
           echo "started=$started" >> "$GITHUB_OUTPUT"
 
       - name: Make promote script executable
+        if: steps.promotion.outputs.needed == 'true'
         run: chmod +x .github/scripts/promote_tested_version.sh
 
       - name: Save old tested version for commit message
+        if: steps.promotion.outputs.needed == 'true'
         id: old_version
         env:
           COMPONENT: ${{ inputs.component }}
@@ -92,6 +117,7 @@ jobs:
           echo "Current tested_version for ${COMPONENT}: ${OLD_TESTED}"
 
       - name: Promote single component (fail-closed)
+        if: steps.promotion.outputs.needed == 'true'
         env:
           COMPONENT: ${{ inputs.component }}
           VERSION: ${{ inputs.version }}
@@ -102,6 +128,7 @@ jobs:
           bash .github/scripts/promote_tested_version.sh "${COMPONENT}" "${VERSION}" "${NOTE}"
 
       - name: Verify only expected files changed
+        if: steps.promotion.outputs.needed == 'true'
         run: |
           set -euo pipefail
 
@@ -118,8 +145,7 @@ jobs:
           if ! git diff --quiet tested_versions.json; then
             echo "✅ tested_versions.json has changes"
           else
-            echo "::error::tested_versions.json has no changes — promotion may have failed silently"
-            exit 1
+            echo "tested_versions.json unchanged (metadata-only promotion)"
           fi
 
           if ! git diff --quiet xray_shell_versions.json; then
@@ -163,7 +189,7 @@ jobs:
           echo "✅ All pre-commit validations passed"
 
       - name: Publish and verify the qualified fallback snapshot
-        if: inputs.component == 'xray'
+        if: steps.promotion.outputs.needed == 'true' && inputs.component == 'xray'
         env:
           GH_TOKEN: ${{ github.token }}
           QUAL_RUN: ${{ inputs.qualification_run }}
@@ -189,6 +215,7 @@ jobs:
           cp "$tmp/release/xray_shell_versions.json" xray_shell_versions.json
 
       - name: Commit promoted version
+        if: steps.promotion.outputs.needed == 'true'
         env:
           COMPONENT: ${{ inputs.component }}
           VERSION: ${{ inputs.version }}
