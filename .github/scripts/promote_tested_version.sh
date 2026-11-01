@@ -300,10 +300,9 @@ _verify_nginx_build_release_core() {
     return 1
   fi
 
-  # Reject draft and prerelease releases. GitHub's /releases/tags/<tag> endpoint
-  # returns the release regardless of draft/prerelease status, so we must enforce
-  # explicitly that only stable published releases may be promoted to
-  # tested_version (fail-closed).
+  # Reject draft and prerelease releases. /releases/tags/<tag> never answers for
+  # a draft (it 404s), so the draft check is belt-and-braces: a draft is already
+  # rejected above as "not found". Prerelease still has to be enforced here.
   local is_draft is_prerelease
   is_draft=$(printf '%s' "$release_json" | "$JQ_BIN" -r '.draft // false' 2>/dev/null)
   is_prerelease=$(printf '%s' "$release_json" | "$JQ_BIN" -r '.prerelease // false' 2>/dev/null)
