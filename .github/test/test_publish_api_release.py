@@ -246,14 +246,28 @@ class PublishTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'duplicate release tag'):
                 module.find_release('api-2026.10.30.1')
 
+    def test_release_lookup_polls_right_after_a_write(self):
+        listed = [{'tag_name': 'api-2026.10.30.1', 'draft': True}]
+        with patch.object(module, 'releases', side_effect=[[], [], listed]), \
+             patch.object(module.time, 'sleep') as sleep:
+            self.assertEqual(module.find_release('api-2026.10.30.1', attempts=3), listed[0])
+        self.assertEqual(sleep.call_count, 2)
+
+    def test_release_lookup_gives_up_after_the_last_attempt(self):
+        with patch.object(module, 'releases', return_value=[]), \
+             patch.object(module.time, 'sleep') as sleep:
+            self.assertIsNone(module.find_release('api-2026.10.30.1', attempts=3))
+        self.assertEqual(sleep.call_count, 2)
+
     def test_complete_draft_requires_an_existing_draft(self):
         directory = self.path / 'assets'
         directory.mkdir()
         (directory / 'compatibility.json').write_bytes(b'expected')
-        with patch.object(module, 'find_release', return_value=None), \
+        with patch.object(module, 'find_release', return_value=None) as find, \
              patch.object(module.subprocess, 'run') as run:
             with self.assertRaisesRegex(ValueError, 'missing before completion'):
                 module.complete_draft('api-2026.10.30.1', 'e' * 40, directory, 'marker')
+            find.assert_called_once_with('api-2026.10.30.1', attempts=10)
             run.assert_not_called()
 
     def test_rollback_flag_cannot_bypass_downgrade_guard(self):
