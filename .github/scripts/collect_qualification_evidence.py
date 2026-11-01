@@ -13,6 +13,19 @@ INSTALLER_SCENARIOS = ('fresh', 'reinstall', 'remove')
 BOOTSTRAP_IMAGES = ('debian:12-slim', 'debian:13-slim', 'ubuntu:24.04', 'ubuntu:26.04', 'quay.io/centos/centos:stream10')
 
 
+def runner_label(job):
+    """The image the job was actually dispatched to.
+
+    `runs-on` is pinned per workflow, so hardcoding the old floating label would
+    record a runner the job never used. Read the label back from the job instead.
+    """
+    labels = [str(label) for label in job.get('labels') or []]
+    images = [label for label in labels if re.fullmatch(r'ubuntu-[0-9]{2}\.[0-9]{2}', label)]
+    if images:
+        return images[0]
+    return ','.join(labels) or 'unknown'
+
+
 def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt):
     if baselines.get('schemaVersion') != 1 or not baselines.get('baselines'):
         raise ValueError('missing baselines')
@@ -78,7 +91,7 @@ def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt):
                 coverage = 'same-version-reinstall'
             scenarios[key] = {'conclusion': 'success', 'runId': run_id, 'jobId': job_id, 'job': name,
                               'binary': fact,
-                              'environment': {'runner': 'ubuntu-latest', 'os': os_info, 'mode': 'reality',
+                              'environment': {'runner': runner_label(matching[0]), 'os': os_info, 'mode': 'reality',
                                               'coverage': coverage}}
         entries.append({'version': version, 'commit': baseline['commit'],
                         'installSha256': baseline['installSha256'], 'initial': initial, 'scenarios': scenarios})

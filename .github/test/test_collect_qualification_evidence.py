@@ -32,6 +32,8 @@ class CollectionTests(unittest.TestCase):
                           'conclusion': 'success', 'id': i + 200} for i, scenario in enumerate(module.INSTALLER_SCENARIOS))
         self.jobs.extend({'name': f'Minimal bootstrap ({image})', 'status': 'completed',
                           'conclusion': 'success', 'id': i + 300} for i, image in enumerate(module.BOOTSTRAP_IMAGES))
+        for job in self.jobs:
+            job['labels'] = ['ubuntu-24.04']
 
     def collect(self):
         return module.collect(self.baselines, self.jobs, self.candidate, self.base, self.facts, 123, 'e' * 40, 1)
@@ -41,6 +43,17 @@ class CollectionTests(unittest.TestCase):
         self.assertEqual(len(result['baselines'][0]['scenarios']), 7)
         self.assertEqual(result['baselines'][0]['scenarios']['fallback']['environment']['coverage'], 'direct-fallback-function')
         self.assertEqual(result['baselines'][0]['scenarios']['legacy-upgrade']['environment']['coverage'], 'same-version-reinstall')
+
+    def test_records_the_runner_the_job_actually_used(self):
+        result = self.collect()
+        for scenario in result['baselines'][0]['scenarios'].values():
+            self.assertEqual(scenario['environment']['runner'], 'ubuntu-24.04')
+
+    def test_runner_label_follows_the_job_when_it_is_not_a_pinned_image(self):
+        self.jobs[0]['labels'] = ['self-hosted', 'linux', 'x64']
+        result = self.collect()
+        self.assertEqual(result['baselines'][0]['scenarios']['fresh']['environment']['runner'],
+                         'self-hosted,linux,x64')
 
     def test_fails_closed_for_failure_missing_or_duplicate_job(self):
         self.jobs[0]['conclusion'] = 'failure'
