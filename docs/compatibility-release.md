@@ -67,3 +67,9 @@ recovery; stopping future promotion does not repair them. See the
 candidate and recovery details. GitHub Release
 immutability must be checked separately: the workflows reject mismatched
 existing assets, but this alone is not GitHub-enforced immutability.
+
+### 发布中断与重复晋级
+
+发布器先创建绑定 qualification、main commit 和资产摘要的草稿，再上传和逐字节核验资产，最后公开。重试仅补传同一草稿中缺少的资产；已有资产不同、草稿身份不符或存在额外资产都会拒绝，不覆盖资产。已公开的 Release 仍只读核验。旧发布器留下且没有身份标记的草稿需要人工核查，不能自动接管。
+
+重复晋级已生效的 tested version（没有新备注，或备注相同）成功退出，不更新时间、不创建提交，也不要求重新提供 qualification。修改备注仍走验证和发布流程。

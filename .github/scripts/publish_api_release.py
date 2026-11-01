@@ -41,6 +41,41 @@ def source_file(path, sha):
     return json.loads(base64.b64decode(response['content'], validate=False))
 
 
+def complete_draft(tag, sha, directory, marker):
+    """Resume only our exact draft; never overwrite an existing asset."""
+    release = api(f'repos/{REPO}/releases/tags/{tag}')
+    if not release.get('draft'):
+        return
+    if (release.get('body') != marker or release.get('target_commitish') != sha
+            or release.get('prerelease') or release.get('tag_name') != tag):
+        raise ValueError('draft release identity mismatch')
+    assets = release.get('assets', [])
+    names = [asset['name'] for asset in assets]
+    expected = {p.name for p in directory.iterdir()}
+    if len(names) != len(set(names)) or not set(names) <= expected:
+        raise ValueError('unexpected draft assets')
+    # Check every existing byte before making any write. An interrupted upload
+    # with wrong bytes requires investigation, never --clobber.
+    with tempfile.TemporaryDirectory() as tmp:
+        if names:
+            subprocess.run(['gh', 'release', 'download', tag, '--repo', REPO,
+                            '--dir', tmp], check=True)
+            actual = Path(tmp)
+            if {p.name for p in actual.iterdir()} != set(names):
+                raise ValueError('downloaded draft asset list mismatch')
+            for name in names:
+                if (actual / name).read_bytes() != (directory / name).read_bytes():
+                    raise ValueError(f'draft asset differs: {name}')
+    missing = sorted(expected - set(names))
+    if missing:
+        subprocess.run(['gh', 'release', 'upload', tag, '--repo', REPO,
+                        *(str(directory / name) for name in missing)], check=True)
+    # Verify complete bytes and tag before exposing the snapshot publicly.
+    verify_api_release.verify(tag, sha, directory, allow_draft=True)
+    subprocess.run(['gh', 'release', 'edit', tag, '--repo', REPO,
+                    '--draft=false'], check=True)
+
+
 def publish(tag, evidence_path, expected_path, candidate_path, run_id, attempt, tested_metadata_path=None):
     if not re.fullmatch(r'api-[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]+', tag):
         raise ValueError('invalid API release tag')
@@ -82,6 +117,9 @@ def publish(tag, evidence_path, expected_path, candidate_path, run_id, attempt, 
         directory = Path(tmp)
         for name, data in files.items():
             (directory / name).write_bytes(data)
+        marker = ('Qualified API metadata snapshot.\n'
+                  f'qualification={run_id}; commit={sha}; sha256sums='
+                  f'{hashlib.sha256(files["SHA256SUMS"]).hexdigest()}')
         release_path = f'repos/{REPO}/releases/tags/{tag}'
         if not exists(release_path):
             # A pre-existing tag without a Release is never adopted blindly.
@@ -89,8 +127,8 @@ def publish(tag, evidence_path, expected_path, candidate_path, run_id, attempt, 
                 raise ValueError('release tag already exists without a matching release')
             subprocess.run(['gh', 'release', 'create', tag, '--repo', REPO,
                             '--target', sha, '--title', f'API {tag}',
-                            '--notes', 'Qualified API metadata snapshot.',
-                            *(str(directory / name) for name in sorted(files))], check=True)
+                            '--notes', marker, '--draft'], check=True)
+        complete_draft(tag, sha, directory, marker)
         verify_api_release.verify(tag, sha, directory)
 
 

@@ -97,6 +97,7 @@ class PublishTests(unittest.TestCase):
              patch.object(module.prepare_api_release, 'prepare', return_value={'compatibility.json': b'{}', 'xray_shell_versions.json': b'{}'}), \
              patch.object(module.verify_qualification_run, 'verify'), \
              patch.object(module, 'exists', return_value=True), \
+             patch.object(module, 'complete_draft'), \
              patch.object(module.verify_api_release, 'verify') as verify, patch.object(module.subprocess, 'run') as run:
             self.call()
             verify.assert_called_once()
@@ -141,6 +142,7 @@ class PublishTests(unittest.TestCase):
              patch.object(module.prepare_api_release, 'prepare', return_value={'compatibility.json': b'{}', 'xray_shell_versions.json': b'{}'}) as prepare, \
              patch.object(module.verify_qualification_run, 'verify'), \
              patch.object(module, 'exists', side_effect=[False, False]), \
+             patch.object(module, 'complete_draft'), \
              patch.object(module.verify_api_release, 'verify') as verify, \
              patch.object(module.subprocess, 'run') as run:
             module.publish('api-2026.10.30.1', self.path / 'evidence', self.path / 'expected',
@@ -148,6 +150,71 @@ class PublishTests(unittest.TestCase):
             self.assertEqual(prepare.call_args.args[0], proposed)
             run.assert_called_once()
             verify.assert_called_once()
+
+    def test_draft_resume_uploads_only_missing_assets(self):
+        directory = self.path / 'assets'
+        directory.mkdir()
+        for name in module.verify_api_release.ASSETS:
+            (directory / name).write_bytes(b'expected')
+        meta = {'draft': True, 'body': 'marker', 'target_commitish': 'e' * 40,
+                'prerelease': False, 'tag_name': 'api-2026.10.30.1',
+                'assets': [{'name': 'compatibility.json'}]}
+        calls = []
+
+        def run(args, **kwargs):
+            calls.append(args)
+            if args[2] == 'download':
+                Path(args[-1], 'compatibility.json').write_bytes(b'expected')
+
+        with patch.object(module, 'api', return_value=meta), \
+             patch.object(module.subprocess, 'run', side_effect=run), \
+             patch.object(module.verify_api_release, 'verify') as verify:
+            module.complete_draft('api-2026.10.30.1', 'e' * 40, directory, 'marker')
+        upload = calls[1]
+        self.assertEqual(upload[2], 'upload')
+        self.assertEqual({Path(p).name for p in upload[6:]},
+                         {'SHA256SUMS', 'xray_shell_versions.json'})
+        self.assertNotIn('--clobber', upload)
+        verify.assert_called_once_with('api-2026.10.30.1', 'e' * 40, directory, allow_draft=True)
+        self.assertEqual(calls[-1][2], 'edit')
+
+    def test_draft_identity_and_bytes_fail_before_write(self):
+        directory = self.path / 'assets'
+        directory.mkdir()
+        (directory / 'compatibility.json').write_bytes(b'expected')
+        meta = {'draft': True, 'body': 'marker', 'target_commitish': 'e' * 40,
+                'prerelease': False, 'tag_name': 'api-2026.10.30.1',
+                'assets': [{'name': 'compatibility.json'}]}
+        for field, value in [('body', 'foreign'), ('target_commitish', 'f' * 40),
+                             ('prerelease', True), ('assets', [{'name': 'unexpected'}])]:
+            with self.subTest(field=field), patch.object(module, 'api', return_value=dict(meta, **{field: value})), \
+                 patch.object(module.subprocess, 'run') as run:
+                with self.assertRaises(ValueError):
+                    module.complete_draft('api-2026.10.30.1', 'e' * 40, directory, 'marker')
+                run.assert_not_called()
+
+        def download(args, **kwargs):
+            Path(args[-1], 'compatibility.json').write_bytes(b'corrupt')
+
+        with patch.object(module, 'api', return_value=meta), \
+             patch.object(module.subprocess, 'run', side_effect=download) as run:
+            with self.assertRaisesRegex(ValueError, 'draft asset differs'):
+                module.complete_draft('api-2026.10.30.1', 'e' * 40, directory, 'marker')
+            self.assertEqual(run.call_count, 1)
+
+    def test_incomplete_upload_never_publishes(self):
+        directory = self.path / 'assets'
+        directory.mkdir()
+        (directory / 'compatibility.json').write_bytes(b'expected')
+        meta = {'draft': True, 'body': 'marker', 'target_commitish': 'e' * 40,
+                'prerelease': False, 'tag_name': 'api-2026.10.30.1', 'assets': []}
+        with patch.object(module, 'api', return_value=meta), \
+             patch.object(module.subprocess, 'run') as run, \
+             patch.object(module.verify_api_release, 'verify', side_effect=ValueError('missing asset')):
+            with self.assertRaisesRegex(ValueError, 'missing asset'):
+                module.complete_draft('api-2026.10.30.1', 'e' * 40, directory, 'marker')
+            self.assertEqual(run.call_count, 1)
+            self.assertEqual(run.call_args.args[0][2], 'upload')
 
     def test_rollback_flag_cannot_bypass_downgrade_guard(self):
         newer = dict(self.new, xray_tested_version=self.old['xray_tested_version'])

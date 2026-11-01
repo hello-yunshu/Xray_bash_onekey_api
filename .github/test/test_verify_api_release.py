@@ -30,7 +30,7 @@ class VerifyReleaseTests(unittest.TestCase):
         self.ref = {'object': {'type': 'commit', 'sha': self.commit}}
         self.changed_asset = False
 
-    def verify(self):
+    def verify(self, **kwargs):
         def command(*args):
             return json.dumps(self.ref if args[1] == 'api' else self.meta)
         def download(args, **kwargs):
@@ -40,7 +40,7 @@ class VerifyReleaseTests(unittest.TestCase):
             if self.changed_asset:
                 (target / 'compatibility.json').write_text('changed')
         with patch.object(module, 'command', side_effect=command), patch.object(module.subprocess, 'run', side_effect=download):
-            module.verify(self.tag, self.commit, self.directory)
+            module.verify(self.tag, self.commit, self.directory, **kwargs)
 
     def test_exact_release(self):
         self.verify()
@@ -58,6 +58,21 @@ class VerifyReleaseTests(unittest.TestCase):
         self.meta['isDraft'] = True
         with self.assertRaisesRegex(ValueError, 'stable tag'):
             self.verify()
+
+    def test_draft_assets_verified_before_publication_without_a_tag(self):
+        self.meta.update(isDraft=True, targetCommitish=self.commit)
+        # A draft need not have a tag yet; a wrong target still fails.
+        self.ref = None
+        self.verify(allow_draft=True)
+        self.meta['targetCommitish'] = 'b' * 40
+        with self.assertRaisesRegex(ValueError, 'draft target mismatch'):
+            self.verify(allow_draft=True)
+
+    def test_draft_corruption_is_rejected_before_publication(self):
+        self.meta.update(isDraft=True, targetCommitish=self.commit)
+        self.changed_asset = True
+        with self.assertRaisesRegex(ValueError, 'asset differs'):
+            self.verify(allow_draft=True)
 
     def test_rejects_malformed_expected_checksums(self):
         (self.directory / 'SHA256SUMS').write_text('invalid\n')
