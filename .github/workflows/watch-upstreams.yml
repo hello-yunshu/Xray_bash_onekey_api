@@ -2,8 +2,12 @@ name: Verify and Promote Upstreams
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: ['Check production Xray downloads']
+    types: [completed]
+    branches: [main]
   schedule:
-    - cron: '0 2 * * *'
+    - cron: '23 */6 * * *'
 
 permissions:
   contents: read
@@ -14,7 +18,12 @@ concurrency:
 
 jobs:
   discover:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'failure' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       candidate_version: ${{ steps.discover.outputs.candidate_version }}
       current_xray_version: ${{ steps.discover.outputs.current_xray_version }}
@@ -34,12 +43,16 @@ jobs:
 
   dispatch-qualification:
     needs: discover
-    if: needs.discover.outputs.xray_changed == '1' || needs.discover.outputs.installer_changed == '1' || github.event_name == 'workflow_dispatch'
+    if: needs.discover.outputs.xray_changed == '1' || needs.discover.outputs.installer_changed == '1' || github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_run'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       actions: write
     steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - name: Start read-only qualification of the final candidate tuple
         env:
           GH_TOKEN: ${{ github.token }}
@@ -52,10 +65,4 @@ jobs:
           CANDIDATE_SHA: ${{ needs.discover.outputs.installer_candidate_sha }}
         run: |
           set -euo pipefail
-          gh workflow run qualify-release.yml --ref main \
-            -f base_version="$BASE_VERSION" \
-            -f base_installer_ref="$BASE_REF" \
-            -f base_installer_sha256="$BASE_SHA" \
-            -f candidate_version="$CANDIDATE_VERSION" \
-            -f candidate_installer_ref="$CANDIDATE_REF" \
-            -f candidate_installer_sha256="$CANDIDATE_SHA"
+          python3 .github/scripts/dispatch_upstream_qualification.py

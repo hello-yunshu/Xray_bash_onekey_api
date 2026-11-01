@@ -1,8 +1,13 @@
 name: Qualify candidate API release (read only)
+run-name: ${{ inputs.automation_key || github.event.pull_request.title || 'Qualify candidate API release (read only)' }}
 
 on:
   workflow_dispatch:
     inputs:
+      automation_key:
+        description: Automatic scheduler deduplication identity (not qualification evidence)
+        required: false
+        type: string
       base_version:
         description: Existing Xray version
         required: true
@@ -44,7 +49,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: api-release-qualification-${{ github.workflow }}-${{ github.ref }}
+  group: api-release-qualification-${{ github.workflow }}-${{ inputs.automation_key || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

@@ -1,0 +1,38 @@
+name: Check production Xray downloads
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+  pull_request:
+    paths:
+      - .github/scripts/check_xray_download_health.py
+      - .github/scripts/dispatch_upstream_qualification.py
+      - .github/test/test_upstream_automation.py
+      - .github/workflows/check-xray-downloads.yml
+      - .github/workflows/watch-upstreams.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: xray-download-health-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: python3 .github/test/test_upstream_automation.py
+
+  health:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check current, fallback and pinned installer endpoints
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/check_xray_download_health.py
