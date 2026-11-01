@@ -97,3 +97,7 @@ existing assets, but this alone is not GitHub-enforced immutability.
 自动去重标识保存为 8 天有效的运行附件，不修改资格工作流名称，保证成功的资格运行仍匹配发布工作流的 workflow_run 触发器。
 
 正式完整资格测试成功、API Release 发布且字节复核后，晋级提交自动将候选组合加入 trustedInitials 队首并去重；原有记录与各 Shell 首选不丢失。未通过测试的候选或仅 PR 测试不会扩充线上可信池。
+
+### 显式请求发布
+
+正式资格运行在 evidence 成功后，以 workflow_dispatch 显式请求发布（只传自己的 run ID），不依赖隐式 workflow_run 联动，也不需要 PAT。发布端等待资格运行完成，再检查成功结论、main 分支、仓库、工作流路径、commit、attempt；随后仍认证完整原始证据和当前 main，保持原有防伪和并发保护。PR 不请求发布。发布入口只保留这一自动路径，避免隐式和显式双重触发。
