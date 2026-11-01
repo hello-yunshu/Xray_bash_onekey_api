@@ -171,7 +171,7 @@ jobs:
           else
             sudo -E bash api/.github/scripts/qualify_legacy_upgrade.sh
           fi
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         if: >-
           success() && !(github.event_name == 'pull_request' &&
           github.workflow == 'Qualify legacy shell upgrades (evidence only)' &&
