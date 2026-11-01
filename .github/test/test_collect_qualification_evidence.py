@@ -15,6 +15,7 @@ class CollectionTests(unittest.TestCase):
                                                              'installSha256': 'b' * 64}]}
         self.candidate = {'xrayVersion': '26.10.29', 'installerRef': 'c' * 40, 'installerSha256': 'd' * 64}
         self.base = dict(self.candidate, testedVersion='25.12.8')
+        self.baselines['baselines'][0]['initial'] = dict(self.candidate)
         self.facts = {f'3.2.9-{scenario}': {'version': ('25.12.8' if scenario == 'fallback' else '26.10.29'),
                       'sha256': ('f' * 64 if scenario == 'fallback' else 'a' * 64), 'arch': 'x86_64',
                       'referenceArchive': {'name': 'Xray-linux-64.zip', 'sha256': 'b' * 64},
@@ -68,6 +69,11 @@ class CollectionTests(unittest.TestCase):
                                      'os': {'id': 'ubuntu', 'version': '24.04'}}
         with self.assertRaisesRegex(ValueError, 'inconsistent binary'):
             self.collect()
+
+    def test_missing_initial_never_uses_production_base(self):
+        del self.baselines['baselines'][0]['initial']
+        with self.assertRaisesRegex(ValueError, 'initial baseline tuple'):
+            module.collect(self.baselines, self.jobs, self.candidate, self.base, self.facts, 123, 'e' * 40, 1)
 
     def test_distinguishes_legacy_initial_tuple_from_online_base(self):
         initial = {'xrayVersion': '25.12.8', 'installerRef': '1' * 40, 'installerSha256': '2' * 64}

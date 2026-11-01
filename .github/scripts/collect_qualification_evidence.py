@@ -33,7 +33,7 @@ def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt):
         versions.add(version)
         if not re.fullmatch(r'[0-9a-f]{40}', baseline['commit']) or not re.fullmatch(r'[0-9a-f]{64}', baseline['installSha256']):
             raise ValueError('invalid baseline identity')
-        initial = baseline.get('initial', {k: base[k] for k in ('xrayVersion', 'installerRef', 'installerSha256')})
+        initial = baseline.get('initial', {})
         for field, pattern in (('xrayVersion', r'[0-9]+\.[0-9]+\.[0-9]+'),
                                ('installerRef', r'[0-9a-f]{40}'), ('installerSha256', r'[0-9a-f]{64}')):
             if not isinstance(initial.get(field), str) or not re.fullmatch(pattern, initial[field]):
