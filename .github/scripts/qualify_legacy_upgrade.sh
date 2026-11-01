@@ -87,7 +87,8 @@ config_sha=$(sha256sum /etc/idleleo/conf/xray/config.json | awk '{print $1}')
 if [[ $scenario == user-recovery ]]; then
     # Reproduce the released 3.2.9 permission regression using a fixed fixture,
     # then recover with the Shell release and candidate tuple under test.
-    if XRAY_CANDIDATE_VERSION=26.10.29 \
+    echo "Reproducing permission regression with candidate Xray $candidate and fixed incompatible installer"
+    if XRAY_CANDIDATE_VERSION="$candidate" \
         XRAY_CANDIDATE_INSTALLER_REF=e42df6a772e60dd7b058f852262c4dbeb0bc231d \
         XRAY_CANDIDATE_INSTALLER_SHA256=954666bb028ba8561b2218372b7db76ba051f8252b2db9195321e672263aab94 \
         bash /etc/idleleo/install.sh --xray-update auto_update >"$log" 2>&1; then

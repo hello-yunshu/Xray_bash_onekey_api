@@ -93,7 +93,7 @@ jobs:
           # PRs test an actual version change with the historical installer;
           # the separate legacy workflow also checks the known incompatible
           # current installer. Production dispatch never uses these defaults.
-          CANDIDATE_VERSION=${CANDIDATE_VERSION:-26.10.29}
+          CANDIDATE_VERSION=${CANDIDATE_VERSION:-26.10.31}
           CANDIDATE_REF=${CANDIDATE_REF:-$BASE_REF}
           CANDIDATE_SHA=${CANDIDATE_SHA:-$BASE_SHA}
           [[ "$BASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$CANDIDATE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]

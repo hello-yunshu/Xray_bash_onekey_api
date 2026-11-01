@@ -26,6 +26,10 @@ class PrepareReleaseTests(unittest.TestCase):
                          'installSha256': 'd' * 64, 'scenarios': {key: copy.deepcopy(result) for key in
                          ('fresh', 'legacy-upgrade', 'shell-then-upgrade', 'reinstall', 'failure-recovery', 'restart-recovery', 'fallback')}}]}
 
+        initial = {'xrayVersion': '26.3.27', 'installerRef': 'e' * 40, 'installerSha256': 'f' * 64}
+        self.baselines['baselines'][0]['initial'] = dict(initial)
+        self.evidence['baselines'][0]['initial'] = dict(initial)
+
     def prepare(self):
         return module.prepare(self.metadata, self.evidence, self.baselines)
 
@@ -55,6 +59,20 @@ class PrepareReleaseTests(unittest.TestCase):
         self.evidence['baselines'][0]['scenarios']['fresh']['runId'] = True
         with self.assertRaisesRegex(ValueError, 'run identity'):
             self.prepare()
+
+    def test_missing_initial_configuration_is_rejected(self):
+        del self.baselines['baselines'][0]['initial']
+        with self.assertRaisesRegex(ValueError, 'initial baseline tuple mismatch'):
+            self.prepare()
+
+    def test_runtime_starts_do_not_depend_on_production_recommendation(self):
+        import json
+        config = json.loads((ROOT / 'compatibility-baselines.json').read_text())
+        self.assertEqual({b['initial']['xrayVersion'] for b in config['baselines']}, {'26.3.27'})
+        workflow = (ROOT / '.github/workflows/qualify-legacy-upgrade.yml').read_text()
+        self.assertNotIn('initial.xrayVersion || inputs.base_version', workflow)
+        driver = (ROOT / '.github/scripts/qualify_legacy_upgrade.sh').read_text()
+        self.assertNotIn('XRAY_CANDIDATE_VERSION=26.10.29', driver)
 
     def test_rejects_mismatched_initial_tuple(self):
         self.baselines['baselines'][0]['initial'] = {'xrayVersion': '26.3.27'}

@@ -103,9 +103,9 @@ jobs:
           QUALIFICATION_BINARY_EVIDENCE: ${{ runner.temp }}/xray-binary.json
           XRAY_VERSIONS_FILE: ${{ github.workspace }}/api/xray_shell_versions.json
           CANDIDATE_TESTED_VERSION: ${{ inputs.candidate_tested_version }}
-          BASE_XRAY_VERSION: ${{ matrix.baseline.initial.xrayVersion || inputs.base_version }}
-          BASE_INSTALLER_REF: ${{ matrix.baseline.initial.installerRef || inputs.base_installer_ref }}
-          BASE_INSTALLER_SHA256: ${{ matrix.baseline.initial.installerSha256 || inputs.base_installer_sha256 }}
+          BASE_XRAY_VERSION: ${{ matrix.baseline.initial.xrayVersion }}
+          BASE_INSTALLER_REF: ${{ matrix.baseline.initial.installerRef }}
+          BASE_INSTALLER_SHA256: ${{ matrix.baseline.initial.installerSha256 }}
           XRAY_CANDIDATE_VERSION: ${{ inputs.candidate_version }}
           XRAY_CANDIDATE_INSTALLER_REF: ${{ inputs.candidate_installer_ref }}
           XRAY_CANDIDATE_INSTALLER_SHA256: ${{ inputs.candidate_installer_sha256 }}
@@ -114,15 +114,15 @@ jobs:
           BASELINE_VERSION: ${{ matrix.baseline.version }}
         run: |
           set -euo pipefail
-          # The PR smoke tests a known old installer against the current API
-          # tuple. Manual dispatch always supplies all six explicit inputs.
-          export BASE_XRAY_VERSION="${BASE_XRAY_VERSION:-26.3.27}"
-          export BASE_INSTALLER_REF="${BASE_INSTALLER_REF:-e741a4f56d368afbb9e5be3361b40c4552d3710d}"
-          export BASE_INSTALLER_SHA256="${BASE_INSTALLER_SHA256:-7f70c95f6b418da8b4f4883343d602964915e28748993870fd554383afdbe555}"
+          # The starting tuple belongs to the explicit historical baseline,
+          # never to the current production recommendation.
+          export BASE_XRAY_VERSION="${BASE_XRAY_VERSION:?Missing explicit historical initial tuple}"
+          export BASE_INSTALLER_REF="${BASE_INSTALLER_REF:?Missing explicit historical initial tuple}"
+          export BASE_INSTALLER_SHA256="${BASE_INSTALLER_SHA256:?Missing explicit historical initial tuple}"
           if [[ "$EVENT_NAME" == pull_request && "$CALLER_WORKFLOW" == 'Qualify legacy shell upgrades (evidence only)' ]]; then
             # Fixed negative regression fixture. Do not change this to track
             # the moving API tuple: expected failures must be reproducible.
-            XRAY_CANDIDATE_VERSION=${XRAY_CANDIDATE_VERSION:-26.10.29}
+            XRAY_CANDIDATE_VERSION=${XRAY_CANDIDATE_VERSION:-26.10.31}
             XRAY_CANDIDATE_INSTALLER_REF=${XRAY_CANDIDATE_INSTALLER_REF:-e42df6a772e60dd7b058f852262c4dbeb0bc231d}
             XRAY_CANDIDATE_INSTALLER_SHA256=${XRAY_CANDIDATE_INSTALLER_SHA256:-954666bb028ba8561b2218372b7db76ba051f8252b2db9195321e672263aab94}
             # Isolate restart recovery from the known incompatible installer.

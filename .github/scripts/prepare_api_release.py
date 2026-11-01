@@ -52,7 +52,7 @@ def prepare(metadata, evidence, baselines):
         if (entry.get('commit'), entry.get('installSha256')) != expected[version]:
             raise ValueError('baseline identity mismatch')
         configured = next(b for b in baselines['baselines'] if b['version'] == version)
-        if 'initial' in configured and entry.get('initial') != configured['initial']:
+        if not isinstance(configured.get('initial'), dict) or entry.get('initial') != configured['initial']:
             raise ValueError('initial baseline tuple mismatch')
         scenarios = entry.get('scenarios')
         if not isinstance(scenarios, dict) or set(scenarios) != required:
