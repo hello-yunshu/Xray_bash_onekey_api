@@ -399,7 +399,9 @@ _verify_nginx_build_release_core() {
     echo "ERROR: SHA256SUMS content is empty" >&2
     return 1
   fi
-  if grep -qi '^<html\|^<!DOCTYPE' "$sha256sums_file"; then
+  # -E keeps the alternation portable: GNU grep accepts `\|` in BRE but BSD
+  # grep matches it literally, which silently skipped this rejection.
+  if grep -Eqi '^<html|^<!DOCTYPE' "$sha256sums_file"; then
     echo "ERROR: SHA256SUMS response is HTML, not checksum file" >&2
     return 1
   fi
