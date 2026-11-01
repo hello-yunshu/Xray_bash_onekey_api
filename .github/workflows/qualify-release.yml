@@ -1,5 +1,4 @@
 name: Qualify candidate API release (read only)
-run-name: ${{ inputs.automation_key || github.event.pull_request.title || 'Qualify candidate API release (read only)' }}
 
 on:
   workflow_dispatch:
@@ -67,10 +66,26 @@ jobs:
       tested_version: ${{ steps.resolve.outputs.tested_version }}
       candidate_tested_version: ${{ steps.resolve.outputs.candidate_tested_version }}
       recovery_baseline: ${{ steps.resolve.outputs.recovery_baseline }}
+      resolved_baselines: ${{ steps.resolve.outputs.resolved_baselines }}
     steps:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
+      - name: Record automatic qualification identity
+        if: inputs.automation_key != ''
+        env:
+          AUTOMATION_KEY: ${{ inputs.automation_key }}
+        run: |
+          set -euo pipefail
+          [[ "$AUTOMATION_KEY" =~ ^auto-xray-[0-9a-f]{64}$ ]]
+          printf '%s\n' "$AUTOMATION_KEY" > "$RUNNER_TEMP/qualification-key.txt"
+      - uses: actions/upload-artifact@v4
+        if: inputs.automation_key != ''
+        with:
+          name: qualification-key-${{ inputs.automation_key }}
+          path: ${{ runner.temp }}/qualification-key.txt
+          if-no-files-found: error
+          retention-days: 8
       - id: resolve
         env:
           BASE_VERSION: ${{ inputs.base_version }}
@@ -112,7 +127,12 @@ jobs:
           baseline_sha=$(jq -r --arg version "$shell_version" '[.baselines[] | select(.version == $version) | .installSha256] | if length == 1 then .[0] else empty end' compatibility-baselines.json)
           [[ "$shell_commit" =~ ^[0-9a-f]{40}$ && "$shell_sha" =~ ^[0-9a-f]{64}$ ]]
           [[ "$shell_sha" == "$baseline_sha" ]]
-          recovery_baseline=$(jq -c '[.baselines[] | select(.version == "3.2.9")] | if length == 1 then .[0] elif length == 0 then null else error("duplicate recovery baseline") end' compatibility-baselines.json)
+          selection_args=()
+          # PRs exercise the real fallback tuple across the complete matrix.
+          [[ "$EVENT_NAME" != pull_request ]] || selection_args+=(--exercise-fallback)
+          python3 .github/scripts/select_trusted_initials.py compatibility-baselines.json "$RUNNER_TEMP/resolved-baselines.json" "${selection_args[@]}"
+          resolved_baselines=$(jq -c . "$RUNNER_TEMP/resolved-baselines.json")
+          recovery_baseline=$(jq -c '[.baselines[] | select(.version == "3.2.9")] | if length == 1 then .[0] elif length == 0 then null else error("duplicate recovery baseline") end' "$RUNNER_TEMP/resolved-baselines.json")
           {
             echo "base_version=$BASE_VERSION"
             echo "base_ref=$BASE_REF"
@@ -125,6 +145,7 @@ jobs:
             echo "tested_version=$tested_version"
             echo "candidate_tested_version=$CANDIDATE_TESTED_VERSION"
             echo "recovery_baseline=$recovery_baseline"
+            echo "resolved_baselines=$resolved_baselines"
           } >> "$GITHUB_OUTPUT"
 
   qualify:
@@ -133,6 +154,7 @@ jobs:
     permissions:
       contents: read
     with:
+      resolved_baselines: ${{ needs.inputs.outputs.resolved_baselines }}
       base_version: ${{ needs.inputs.outputs.base_version }}
       base_installer_ref: ${{ needs.inputs.outputs.base_ref }}
       base_installer_sha256: ${{ needs.inputs.outputs.base_sha }}
@@ -297,8 +319,10 @@ jobs:
           BASE_SHA: ${{ needs.inputs.outputs.base_sha }}
           TESTED_VERSION: ${{ needs.inputs.outputs.tested_version }}
           CANDIDATE_TESTED_VERSION: ${{ needs.inputs.outputs.candidate_tested_version }}
+          RESOLVED_BASELINES: ${{ needs.inputs.outputs.resolved_baselines }}
         run: |
           set -euo pipefail
+          printf '%s\n' "$RESOLVED_BASELINES" > "$RUNNER_TEMP/resolved-baselines.json"
           mkdir -p evidence
           jq -n --arg v "$CANDIDATE_VERSION" --arg ref "$CANDIDATE_REF" --arg sha "$CANDIDATE_SHA" --arg tested "$CANDIDATE_TESTED_VERSION" \
             '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha,testedVersion:$tested}' > "$RUNNER_TEMP/candidate.json"
@@ -328,7 +352,7 @@ jobs:
             rm -f evidence/compatibility.json
             if gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" | jq '[.[].jobs[]]' > "$RUNNER_TEMP/jobs.json" &&
               python3 .github/scripts/collect_qualification_evidence.py \
-                --baselines compatibility-baselines.json --jobs "$RUNNER_TEMP/jobs.json" \
+                --baselines "$RUNNER_TEMP/resolved-baselines.json" --jobs "$RUNNER_TEMP/jobs.json" \
                 --candidate "$RUNNER_TEMP/candidate.json" --base "$RUNNER_TEMP/base.json" --binaries "$RUNNER_TEMP/binaries" --output evidence/compatibility.json \
                 --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --commit "$GITHUB_SHA"; then
               collected=true

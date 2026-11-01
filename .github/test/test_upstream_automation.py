@@ -120,6 +120,32 @@ class SchedulerTests(unittest.TestCase):
         finally:
             os.chdir(old)
 
+    def test_artifact_identity_deduplicates_fixed_name_workflow(self):
+        values = dict(BASE_VERSION='26.10.29', BASE_REF='a' * 40, BASE_SHA='b' * 64,
+                      CANDIDATE_VERSION='26.10.31', CANDIDATE_REF='c' * 40, CANDIDATE_SHA='d' * 64)
+        now = dt.datetime.now(dt.timezone.utc).isoformat().replace('+00:00', 'Z')
+        def lookup(args, **kwargs):
+            path = args[-1]
+            if '/artifacts?' in path:
+                return json.dumps([{'artifacts': [{'created_at': now, 'expired': False, 'workflow_run': {'id': 42}}]}])
+            if path.endswith('/runs/42'):
+                return json.dumps(dict(display_title='Qualify candidate API release (read only)',
+                    repository={'full_name': 'owner/repo'}, path='.github/workflows/qualify-release.yml',
+                    event='workflow_dispatch', head_branch='main', status='in_progress', created_at=now))
+            return '[{"workflow_runs": []}]'
+        old = Path.cwd()
+        os.chdir(ROOT)
+        try:
+            with patch.object(scheduler.subprocess, 'check_output', side_effect=lookup), \
+                 patch.object(scheduler.subprocess, 'run') as run:
+                scheduler.dispatch(values, 'owner/repo')
+                run.assert_not_called()
+        finally:
+            os.chdir(old)
+        workflow = (ROOT / '.github/workflows/qualify-release.yml').read_text()
+        self.assertNotIn('run-name:', workflow)
+        self.assertIn('qualification-key-${{ inputs.automation_key }}', workflow)
+
     def test_workflow_health_failure_triggers_discovery_and_preserves_gate(self):
         watch = (ROOT / '.github/workflows/watch-upstreams.yml').read_text()
         health_workflow = (ROOT / '.github/workflows/check-xray-downloads.yml').read_text()

@@ -36,11 +36,24 @@ def dispatch(values, repo):
     pages = json.loads(subprocess.check_output(['gh', 'api', '--paginate', '--slurp',
         f'repos/{repo}/actions/workflows/qualify-release.yml/runs?event=workflow_dispatch&branch=main&per_page=100&created=>={since}'], text=True))
     runs = [run for page in pages for run in page['workflow_runs']]
+    markers = json.loads(subprocess.check_output(['gh', 'api', '--paginate', '--slurp',
+        f'repos/{repo}/actions/artifacts?name=qualification-key-{key}&per_page=100'], text=True))
+    for page in markers:
+        for marker in page.get('artifacts', []):
+            if marker.get('expired') or marker.get('created_at', '') < since:
+                continue
+            run = json.loads(subprocess.check_output(['gh', 'api',
+                f"repos/{repo}/actions/runs/{marker['workflow_run']['id']}"], text=True))
+            if (run.get('path') == '.github/workflows/qualify-release.yml' and
+                    run.get('event') == 'workflow_dispatch' and run.get('head_branch') == 'main' and
+                    run.get('repository', {}).get('full_name') == repo):
+                runs.append(dict(run, display_title=key))
     allowed, reason = decision(runs, key, now)
     print(f'{key}: {reason}')
     if not allowed:
         return
-    # The qualifier run-name persists this key in GitHub, without state commits.
+    # A qualification-key artifact persists this key without changing the
+    # workflow name used by the automatic publishing workflow_run trigger.
     args = ['gh', 'workflow', 'run', 'qualify-release.yml', '--repo', repo, '--ref', 'main']
     for name, value in dict(base_version=values['BASE_VERSION'], base_installer_ref=values['BASE_REF'],
                             base_installer_sha256=values['BASE_SHA'], candidate_version=values['CANDIDATE_VERSION'],

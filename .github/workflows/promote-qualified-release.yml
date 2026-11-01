@@ -70,10 +70,11 @@ jobs:
           jq -cS . "$tmp/release/xray_shell_versions.json" > "$tmp/release.sorted"
           cmp "$tmp/staged.sorted" "$tmp/release.sorted"
           cp "$tmp/release/xray_shell_versions.json" xray_shell_versions.json
+          python3 .github/scripts/record_qualified_initial.py --baselines compatibility-baselines.json --metadata xray_shell_versions.json
           bash validate-json.sh
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add xray_shell_versions.json
+          git add xray_shell_versions.json compatibility-baselines.json
           git commit -m "promote(xray): qualified API release $tag"
           # The checkout is the qualified main commit. A concurrent commit
           # prevents this push; do not force or rebase qualified metadata.

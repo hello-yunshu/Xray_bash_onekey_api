@@ -3,6 +3,10 @@ name: Qualify legacy shell upgrades (evidence only)
 on:
   workflow_call:
     inputs:
+      resolved_baselines:
+        description: Validated test starts selected by the caller
+        required: false
+        type: string
       base_version:
         required: true
         type: string
@@ -72,7 +76,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 .github/scripts/verify_shell_baselines.py compatibility-baselines.json
       - id: list
-        run: echo "matrix=$(jq -c '.baselines' compatibility-baselines.json)" >> "$GITHUB_OUTPUT"
+        env:
+          RESOLVED_BASELINES: ${{ inputs.resolved_baselines }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [[ -n "$RESOLVED_BASELINES" ]]; then
+            printf '%s\n' "$RESOLVED_BASELINES" > "$RUNNER_TEMP/selected.json"
+            args+=(--selection "$RUNNER_TEMP/selected.json")
+          fi
+          python3 .github/scripts/select_trusted_initials.py compatibility-baselines.json "$RUNNER_TEMP/resolved-baselines.json" "${args[@]}"
+          echo "matrix=$(jq -c '.baselines' "$RUNNER_TEMP/resolved-baselines.json")" >> "$GITHUB_OUTPUT"
 
   legacy-upgrade:
     needs: baselines

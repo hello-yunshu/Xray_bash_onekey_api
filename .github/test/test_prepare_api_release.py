@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 import copy
 import importlib.util
+import sys
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / '.github/scripts'))
 spec = importlib.util.spec_from_file_location('prepare_api_release', ROOT / '.github/scripts/prepare_api_release.py')
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
@@ -60,9 +62,18 @@ class PrepareReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'run identity'):
             self.prepare()
 
+    def test_approved_alternative_is_preserved_in_release_evidence(self):
+        alternative = dict(self.baselines['baselines'][0]['initial'], xrayVersion='25.12.8')
+        self.baselines['trustedInitials'] = [alternative]
+        self.evidence['baselines'][0]['initial'] = alternative
+        self.assertIn(b'25.12.8', self.prepare()['compatibility.json'])
+        self.evidence['baselines'][0]['initial'] = dict(alternative, xrayVersion='99.1.1')
+        with self.assertRaisesRegex(ValueError, 'initial baseline tuple mismatch'):
+            self.prepare()
+
     def test_missing_initial_configuration_is_rejected(self):
         del self.baselines['baselines'][0]['initial']
-        with self.assertRaisesRegex(ValueError, 'initial baseline tuple mismatch'):
+        with self.assertRaisesRegex(ValueError, 'initial baseline tuple mismatch|invalid trusted initial tuple'):
             self.prepare()
 
     def test_runtime_starts_do_not_depend_on_production_recommendation(self):
@@ -77,7 +88,7 @@ class PrepareReleaseTests(unittest.TestCase):
     def test_rejects_mismatched_initial_tuple(self):
         self.baselines['baselines'][0]['initial'] = {'xrayVersion': '26.3.27'}
         self.evidence['baselines'][0]['initial'] = {'xrayVersion': '26.10.29'}
-        with self.assertRaisesRegex(ValueError, 'initial baseline tuple mismatch'):
+        with self.assertRaisesRegex(ValueError, 'initial baseline tuple mismatch|invalid trusted initial tuple'):
             self.prepare()
 
 
