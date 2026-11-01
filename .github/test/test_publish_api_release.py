@@ -85,21 +85,26 @@ class PublishTests(unittest.TestCase):
              patch.object(module, 'source_file', side_effect=[self.old, {}]), \
              patch.object(module.prepare_api_release, 'prepare', return_value={'compatibility.json': b'{}', 'xray_shell_versions.json': b'{}'}), \
              patch.object(module.verify_qualification_run, 'verify'), \
-             patch.object(module, 'exists', side_effect=[False, True]), \
+             patch.object(module, 'find_release', return_value=None), \
+             patch.object(module, 'exists', return_value=True), \
              patch.object(module.subprocess, 'run') as run:
             with self.assertRaisesRegex(ValueError, 'tag already exists'):
                 self.call()
             run.assert_not_called()
 
     def test_existing_release_is_verified_without_write(self):
+        release = {'tag_name': 'api-2026.10.30.1', 'draft': False}
         with patch.object(module, 'api', return_value=self.ref), \
              patch.object(module, 'source_file', side_effect=[self.old, {}]), \
              patch.object(module.prepare_api_release, 'prepare', return_value={'compatibility.json': b'{}', 'xray_shell_versions.json': b'{}'}), \
              patch.object(module.verify_qualification_run, 'verify'), \
-             patch.object(module, 'exists', return_value=True), \
-             patch.object(module, 'complete_draft'), \
+             patch.object(module, 'find_release', return_value=release), \
+             patch.object(module, 'exists') as exists, \
+             patch.object(module, 'complete_draft') as complete, \
              patch.object(module.verify_api_release, 'verify') as verify, patch.object(module.subprocess, 'run') as run:
             self.call()
+            exists.assert_not_called()
+            complete.assert_called_once()
             verify.assert_called_once()
             run.assert_not_called()
 
@@ -141,7 +146,8 @@ class PublishTests(unittest.TestCase):
              patch.object(module, 'source_file', side_effect=[self.old, {}]), \
              patch.object(module.prepare_api_release, 'prepare', return_value={'compatibility.json': b'{}', 'xray_shell_versions.json': b'{}'}) as prepare, \
              patch.object(module.verify_qualification_run, 'verify'), \
-             patch.object(module, 'exists', side_effect=[False, False]), \
+             patch.object(module, 'find_release', return_value=None), \
+             patch.object(module, 'exists', return_value=False), \
              patch.object(module, 'complete_draft'), \
              patch.object(module.verify_api_release, 'verify') as verify, \
              patch.object(module.subprocess, 'run') as run:
@@ -166,7 +172,7 @@ class PublishTests(unittest.TestCase):
             if args[2] == 'download':
                 Path(args[-1], 'compatibility.json').write_bytes(b'expected')
 
-        with patch.object(module, 'api', return_value=meta), \
+        with patch.object(module, 'find_release', return_value=meta), \
              patch.object(module.subprocess, 'run', side_effect=run), \
              patch.object(module.verify_api_release, 'verify') as verify:
             module.complete_draft('api-2026.10.30.1', 'e' * 40, directory, 'marker')
@@ -187,7 +193,7 @@ class PublishTests(unittest.TestCase):
                 'assets': [{'name': 'compatibility.json'}]}
         for field, value in [('body', 'foreign'), ('target_commitish', 'f' * 40),
                              ('prerelease', True), ('assets', [{'name': 'unexpected'}])]:
-            with self.subTest(field=field), patch.object(module, 'api', return_value=dict(meta, **{field: value})), \
+            with self.subTest(field=field), patch.object(module, 'find_release', return_value=dict(meta, **{field: value})), \
                  patch.object(module.subprocess, 'run') as run:
                 with self.assertRaises(ValueError):
                     module.complete_draft('api-2026.10.30.1', 'e' * 40, directory, 'marker')
@@ -196,7 +202,7 @@ class PublishTests(unittest.TestCase):
         def download(args, **kwargs):
             Path(args[-1], 'compatibility.json').write_bytes(b'corrupt')
 
-        with patch.object(module, 'api', return_value=meta), \
+        with patch.object(module, 'find_release', return_value=meta), \
              patch.object(module.subprocess, 'run', side_effect=download) as run:
             with self.assertRaisesRegex(ValueError, 'draft asset differs'):
                 module.complete_draft('api-2026.10.30.1', 'e' * 40, directory, 'marker')
@@ -208,13 +214,47 @@ class PublishTests(unittest.TestCase):
         (directory / 'compatibility.json').write_bytes(b'expected')
         meta = {'draft': True, 'body': 'marker', 'target_commitish': 'e' * 40,
                 'prerelease': False, 'tag_name': 'api-2026.10.30.1', 'assets': []}
-        with patch.object(module, 'api', return_value=meta), \
+        with patch.object(module, 'find_release', return_value=meta), \
              patch.object(module.subprocess, 'run') as run, \
              patch.object(module.verify_api_release, 'verify', side_effect=ValueError('missing asset')):
             with self.assertRaisesRegex(ValueError, 'missing asset'):
                 module.complete_draft('api-2026.10.30.1', 'e' * 40, directory, 'marker')
             self.assertEqual(run.call_count, 1)
             self.assertEqual(run.call_args.args[0][2], 'upload')
+
+    def test_draft_is_resolved_through_the_collection_listing(self):
+        listed = [{'tag_name': 'api-2026.10.29.9', 'draft': False},
+                  {'tag_name': 'api-2026.10.30.1', 'draft': True}]
+        with patch.object(module.subprocess, 'check_output',
+                          return_value=json.dumps([listed[:1], listed[1:]])) as output:
+            self.assertEqual(module.find_release('api-2026.10.30.1'), listed[1])
+        command = output.call_args.args[0]
+        # The tag endpoint answers 404 for drafts and must never be used here.
+        self.assertIn('--slurp', command)
+        self.assertTrue(any('releases?per_page=100' in part for part in command))
+        self.assertFalse(any('releases/tags' in part for part in command))
+
+    def test_absent_release_is_not_an_error(self):
+        listed = [{'tag_name': 'api-2026.10.29.9', 'draft': False}]
+        with patch.object(module.subprocess, 'check_output', return_value=json.dumps([listed])):
+            self.assertIsNone(module.find_release('api-2026.10.30.1'))
+
+    def test_duplicate_release_tag_is_rejected(self):
+        listed = [{'tag_name': 'api-2026.10.30.1', 'draft': True},
+                  {'tag_name': 'api-2026.10.30.1', 'draft': False}]
+        with patch.object(module.subprocess, 'check_output', return_value=json.dumps([listed])):
+            with self.assertRaisesRegex(ValueError, 'duplicate release tag'):
+                module.find_release('api-2026.10.30.1')
+
+    def test_complete_draft_requires_an_existing_draft(self):
+        directory = self.path / 'assets'
+        directory.mkdir()
+        (directory / 'compatibility.json').write_bytes(b'expected')
+        with patch.object(module, 'find_release', return_value=None), \
+             patch.object(module.subprocess, 'run') as run:
+            with self.assertRaisesRegex(ValueError, 'missing before completion'):
+                module.complete_draft('api-2026.10.30.1', 'e' * 40, directory, 'marker')
+            run.assert_not_called()
 
     def test_rollback_flag_cannot_bypass_downgrade_guard(self):
         newer = dict(self.new, xray_tested_version=self.old['xray_tested_version'])
