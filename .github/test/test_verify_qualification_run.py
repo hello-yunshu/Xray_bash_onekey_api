@@ -22,14 +22,15 @@ class RunVerificationTests(unittest.TestCase):
                     'run_attempt': 2, 'repository': {'full_name': self.repo}}
         self.jobs = [{'id': 44, 'name': 'qualify / Legacy upgrade (3.2.9, direct)', 'status': 'completed', 'conclusion': 'success'}]
         self.jobs.append({'id': 400, 'name': 'Recover broken 3.2.9 installation', 'status': 'completed', 'conclusion': 'success'})
+        self.modes = ['xtls_only', 'ws_grpc_xhttp', 'reality', 'reality_nginx', 'tls']
         self.jobs.extend({'id': 100 + i, 'name': f'Full install ({mode})', 'status': 'completed', 'conclusion': 'success'}
-                         for i, mode in enumerate(module.MODES))
+                         for i, mode in enumerate(self.modes))
         self.jobs.extend({'id': 200 + i, 'name': f'Installer smoke ({scenario})', 'status': 'completed', 'conclusion': 'success'}
                          for i, scenario in enumerate(module.INSTALLER_SCENARIOS))
         self.jobs.extend({'id': 300 + i, 'name': f'Minimal bootstrap ({image})', 'status': 'completed', 'conclusion': 'success'}
                          for i, image in enumerate(module.BOOTSTRAP_IMAGES))
         self.artifacts = [{'name': 'qualification-evidence-11-2', 'expired': False}]
-        mode_jobs = [{'mode': mode, 'job': f'Full install ({mode})', 'jobId': 100 + i, 'runId': 11} for i, mode in enumerate(module.MODES)]
+        mode_jobs = [{'mode': mode, 'job': f'Full install ({mode})', 'jobId': 100 + i, 'runId': 11} for i, mode in enumerate(self.modes)]
         installer_jobs = [{'scenario': scenario, 'job': f'Installer smoke ({scenario})', 'jobId': 200 + i, 'runId': 11} for i, scenario in enumerate(module.INSTALLER_SCENARIOS)]
         bootstrap_jobs = [{'image': image, 'job': f'Minimal bootstrap ({image})', 'jobId': 300 + i, 'runId': 11, 'coverage': 'minimal-bootstrap-only'} for i, image in enumerate(module.BOOTSTRAP_IMAGES)]
         self.evidence = json.dumps({'qualificationCommit': self.sha, 'runAttempt': 2, 'modeJobs': mode_jobs, 'installerJobs': installer_jobs, 'bootstrapJobs': bootstrap_jobs,
@@ -85,6 +86,18 @@ class RunVerificationTests(unittest.TestCase):
         self.run['conclusion'] = 'failure'
         with self.assertRaisesRegex(ValueError, 'untrusted'):
             self.verify()
+
+    def test_rejects_empty_unknown_or_duplicate_mode_jobs(self):
+        original = json.loads(self.evidence)
+        for mode_jobs in ([], [{'mode': 'mystery', 'job': 'Full install (mystery)', 'jobId': 100, 'runId': 11}],
+                          [{'mode': 'reality', 'job': 'Full install (reality)', 'jobId': 100, 'runId': 11},
+                           {'mode': 'reality', 'job': 'Full install (reality)', 'jobId': 101, 'runId': 11}]):
+            with self.subTest(mode_jobs=mode_jobs):
+                changed = dict(original, modeJobs=mode_jobs)
+                self.evidence = json.dumps(changed).encode()
+                with self.assertRaisesRegex(ValueError, 'full installation modes'):
+                    self.verify()
+        self.evidence = json.dumps(original).encode()
 
 
 if __name__ == '__main__':
