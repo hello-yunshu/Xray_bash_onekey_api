@@ -86,21 +86,20 @@ jobs:
             args+=(--selection "$RUNNER_TEMP/selected.json")
           fi
           python3 .github/scripts/select_trusted_initials.py compatibility-baselines.json "$RUNNER_TEMP/resolved-baselines.json" "${args[@]}"
-          echo "matrix=$(jq -c '.baselines' "$RUNNER_TEMP/resolved-baselines.json")" >> "$GITHUB_OUTPUT"
+          # Expand only the scenarios each baseline is allowed to run; a
+          # job-level matrix condition is not available in GitHub Actions.
+          matrix=$(jq -c '[.baselines[] as $baseline | $baseline.scenarios[] | {baseline: $baseline, scenario: .}]' \
+            "$RUNNER_TEMP/resolved-baselines.json")
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
   legacy-upgrade:
     needs: baselines
-    # Scenarios are declared per baseline: Shells below
-    # minimumDirectUpgradeVersion only run shell-first and reinstall, while the
-    # minimum version and newer also run the normal direct upgrade paths.
-    if: contains(matrix.baseline.scenarios, matrix.scenario)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        baseline: ${{ fromJSON(needs.baselines.outputs.matrix) }}
-        scenario: [fresh, direct, shell-first, reinstall, failure-recovery, restart-recovery, fallback]
+        include: ${{ fromJSON(needs.baselines.outputs.matrix) }}
     name: Legacy upgrade (${{ matrix.baseline.version }}, ${{ matrix.scenario }})
     steps:
       - uses: actions/checkout@v5
