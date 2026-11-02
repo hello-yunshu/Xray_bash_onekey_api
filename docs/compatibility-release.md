@@ -94,7 +94,10 @@ existing assets, but this alone is not GitHub-enforced immutability.
 
 `compatibility-baselines.json` 的 `minimumDirectUpgradeVersion` 明确最低支持直接升级的来源版本：
 
-- **3.3.0 及更高版本**：运行 `direct` 等正常直更场景。
+- **3.3.0 及更高版本**：运行 `direct`、`shell-first`、`reinstall`、`failure-recovery`、
+  `restart-recovery`、`fallback` 等正常直更场景。新装 3.3.0 由 `Release Xray` 的
+  full-install 矩阵（relay / ws_grpc_xhttp / reality / reality_nginx / tls）单独验证，
+  不再在历史升级矩阵中重复 `fresh`。
 - **3.2.9 / 3.2.10 / 3.2.11**：`scenarios` 只声明 `shell-first` 与 `reinstall`。
   它们必须先升级 Shell（`-u`）再更新 Xray，或走重装路径；不再要求它们直接升级，
   也不使用 expected-incompatible 豁免把失败刷成通过。
