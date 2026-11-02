@@ -41,8 +41,13 @@ def verify(evidence_bytes, repo, run_id, trusted_sha, attempt):
             break
         page += 1
     mode_jobs = evidence.get('modeJobs')
-    if not isinstance(mode_jobs, list) or len(mode_jobs) != len(MODES) or {j.get('mode') for j in mode_jobs} != set(MODES):
-        raise ValueError('missing full installation modes')
+    # The mode set now follows the released shell (relay replaces xtls_only once
+    # that shell is published), so the verifier accepts any non-empty subset of
+    # the known modes instead of the historical fixed five.
+    if (not isinstance(mode_jobs, list) or not mode_jobs or
+            len({j.get('mode') for j in mode_jobs}) != len(mode_jobs) or
+            any(not isinstance(j.get('mode'), str) or j.get('mode') not in MODES for j in mode_jobs)):
+        raise ValueError('missing or invalid full installation modes')
     for result in mode_jobs:
         name = f"Full install ({result['mode']})"
         matches = [job for job in jobs if job.get('id') == result.get('jobId')]

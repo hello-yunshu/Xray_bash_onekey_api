@@ -22,12 +22,14 @@ class CollectionTests(unittest.TestCase):
                       'os': {'id': 'ubuntu', 'version': '24.04'}}
                       for scenario in module.SCENARIOS.values()}
         self.facts['3.2.9-user-recovery'] = dict(self.facts['3.2.9-fresh'])
+        # The released 3.2.11 shell still ships xtls_only; relay arrives with 3.2.12.
+        self.modes = ['xtls_only', 'ws_grpc_xhttp', 'reality', 'reality_nginx', 'tls']
         self.jobs = [{'name': f'qualify / Legacy upgrade (3.2.9, {scenario})', 'status': 'completed',
                       'conclusion': 'success', 'id': i + 1} for i, scenario in enumerate(module.SCENARIOS.values())]
         self.jobs.append({'name': 'Recover broken 3.2.9 installation', 'status': 'completed',
                           'conclusion': 'success', 'id': 400})
         self.jobs.extend({'name': f'Full install ({mode})', 'status': 'completed',
-                          'conclusion': 'success', 'id': i + 100} for i, mode in enumerate(module.MODES))
+                          'conclusion': 'success', 'id': i + 100} for i, mode in enumerate(self.modes))
         self.jobs.extend({'name': f'Installer smoke ({scenario})', 'status': 'completed',
                           'conclusion': 'success', 'id': i + 200} for i, scenario in enumerate(module.INSTALLER_SCENARIOS))
         self.jobs.extend({'name': f'Minimal bootstrap ({image})', 'status': 'completed',
@@ -36,7 +38,7 @@ class CollectionTests(unittest.TestCase):
             job['labels'] = ['ubuntu-24.04']
 
     def collect(self):
-        return module.collect(self.baselines, self.jobs, self.candidate, self.base, self.facts, 123, 'e' * 40, 1)
+        return module.collect(self.baselines, self.jobs, self.candidate, self.base, self.facts, 123, 'e' * 40, 1, self.modes)
 
     def test_records_exact_jobs_and_fallback_scope(self):
         result = self.collect()
@@ -73,6 +75,22 @@ class CollectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'invalid candidate'):
             self.collect()
 
+    def test_rejects_empty_duplicate_or_unknown_install_modes(self):
+        for modes in ([], ['reality', 'reality'], ['mystery_mode']):
+            with self.subTest(modes=modes):
+                with self.assertRaisesRegex(ValueError, 'invalid install mode list'):
+                    module.collect(self.baselines, self.jobs, self.candidate, self.base, self.facts,
+                                   123, 'e' * 40, 1, modes)
+
+    def test_accepts_the_relay_mode_set_for_the_next_shell(self):
+        modes = ['relay', 'ws_grpc_xhttp', 'reality', 'reality_nginx', 'tls']
+        jobs = [job for job in self.jobs if not job['name'].startswith('Full install (')]
+        jobs.extend({'name': f'Full install ({mode})', 'status': 'completed', 'conclusion': 'success',
+                     'id': 500 + i} for i, mode in enumerate(modes))
+        result = module.collect(self.baselines, jobs, self.candidate, self.base, self.facts,
+                                123, 'e' * 40, 1, modes)
+        self.assertEqual([job['mode'] for job in result['modeJobs']], modes)
+
     def test_rejects_missing_or_inconsistent_binary(self):
         del self.facts['3.2.9-direct']
         with self.assertRaisesRegex(ValueError, 'binary evidence'):
@@ -86,7 +104,7 @@ class CollectionTests(unittest.TestCase):
     def test_missing_initial_never_uses_production_base(self):
         del self.baselines['baselines'][0]['initial']
         with self.assertRaisesRegex(ValueError, 'initial baseline tuple'):
-            module.collect(self.baselines, self.jobs, self.candidate, self.base, self.facts, 123, 'e' * 40, 1)
+            module.collect(self.baselines, self.jobs, self.candidate, self.base, self.facts, 123, 'e' * 40, 1, self.modes)
 
     def test_distinguishes_legacy_initial_tuple_from_online_base(self):
         initial = {'xrayVersion': '25.12.8', 'installerRef': '1' * 40, 'installerSha256': '2' * 64}
