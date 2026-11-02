@@ -97,7 +97,10 @@ if [[ $scenario == user-recovery ]]; then
     systemctl is-active --quiet xray && { echo 'Expected the historical service failure' >&2; exit 1; }
     journal_text=$(journalctl -u xray --no-pager -n 40 2>/dev/null || true)
     grep -qi 'permission denied' <<<"$journal_text" || { echo 'Expected permission denial was not observed' >&2; exit 1; }
-    if ! bash /etc/idleleo/install.sh --update auto_update >"$log" 2>&1; then
+    # The legacy auto-update path refuses a 3.2 -> 3.3 jump by design. The
+    # supported user path is the interactive update, so drive its single
+    # confirmation prompt through stdin.
+    if ! printf 'y\n' | bash /etc/idleleo/install.sh --update >"$log" 2>&1; then
         echo 'Shell upgrade failed during recovery' >&2; diagnose; exit 1
     fi
     expected_shell_sha=$(jq -r '.shell_release_sha256 // empty' "$XRAY_VERSIONS_FILE")
@@ -225,7 +228,10 @@ if [[ $scenario == shell-first ]]; then
     expected_shell_sha=$(jq -r '.shell_release_sha256 // empty' "$XRAY_VERSIONS_FILE")
     [[ $expected_shell =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && $expected_shell_sha =~ ^[0-9a-f]{64}$ ]]
     echo "Upgrading the installed Shell to the exact API Release v$expected_shell"
-    if ! bash /etc/idleleo/install.sh --update auto_update >"$log" 2>&1; then
+    # The legacy auto-update path refuses a 3.2 -> 3.3 jump by design. The
+    # supported user path is the interactive update, so drive its single
+    # confirmation prompt through stdin.
+    if ! printf 'y\n' | bash /etc/idleleo/install.sh --update >"$log" 2>&1; then
         echo 'Shell update failed; candidate not evaluated' >&2
         diagnose
         exit 1
