@@ -8,7 +8,7 @@ from pathlib import Path
 SCENARIOS = {'fresh': 'fresh', 'legacy-upgrade': 'direct',
              'shell-then-upgrade': 'shell-first', 'reinstall': 'reinstall',
              'failure-recovery': 'failure-recovery', 'restart-recovery': 'restart-recovery', 'fallback': 'fallback'}
-MODES = ('xtls_only', 'ws_grpc_xhttp', 'reality', 'reality_nginx', 'tls')
+MODES = ('relay', 'xtls_only', 'ws_grpc_xhttp', 'reality', 'reality_nginx', 'tls')
 INSTALLER_SCENARIOS = ('fresh', 'reinstall', 'remove')
 BOOTSTRAP_IMAGES = ('debian:12-slim', 'debian:13-slim', 'ubuntu:24.04', 'ubuntu:26.04', 'quay.io/centos/centos:stream10')
 
@@ -26,9 +26,12 @@ def runner_label(job):
     return ','.join(labels) or 'unknown'
 
 
-def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt):
+def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt, modes):
     if baselines.get('schemaVersion') != 1 or not baselines.get('baselines'):
         raise ValueError('missing baselines')
+    if (not isinstance(modes, (list, tuple)) or not modes or len(set(modes)) != len(modes) or
+            any(mode not in MODES for mode in modes)):
+        raise ValueError('invalid install mode list')
     if not re.fullmatch(r'[0-9a-f]{40}', commit) or run_id < 1 or attempt < 1:
         raise ValueError('invalid qualification identity')
     for obj in (candidate, base):
@@ -95,8 +98,8 @@ def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt):
                                               'coverage': coverage}}
         entries.append({'version': version, 'commit': baseline['commit'],
                         'installSha256': baseline['installSha256'], 'initial': initial, 'scenarios': scenarios})
-    modes = []
-    for mode in MODES:
+    mode_jobs = []
+    for mode in modes:
         name = f'Full install ({mode})'
         found = [job for job in jobs if job.get('name') == name]
         if len(found) != 1 or found[0].get('status') != 'completed' or found[0].get('conclusion') != 'success':
@@ -104,7 +107,7 @@ def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt):
         job_id = found[0].get('id')
         if not isinstance(job_id, int) or isinstance(job_id, bool) or job_id < 1:
             raise ValueError(f'invalid job identity: {name}')
-        modes.append({'mode': mode, 'runId': run_id, 'jobId': job_id, 'job': name})
+        mode_jobs.append({'mode': mode, 'runId': run_id, 'jobId': job_id, 'job': name})
     installer_jobs = []
     for scenario in INSTALLER_SCENARIOS:
         name = f'Installer smoke ({scenario})'
@@ -150,7 +153,7 @@ def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt):
         recovery = {'runId': run_id, 'jobId': found[0]['id'], 'job': name,
                     'coverage': 'permission-failure-shell-upgrade-candidate-recovery', 'binary': fact}
     return {'schemaVersion': 1, 'candidate': candidate, 'base': base, 'qualificationCommit': commit,
-            'runAttempt': attempt, 'modeJobs': modes, 'installerJobs': installer_jobs,
+            'runAttempt': attempt, 'modeJobs': mode_jobs, 'installerJobs': installer_jobs,
             'bootstrapJobs': bootstrap_jobs, 'offlineRecoveryJob': recovery, 'baselines': entries}
 
 
@@ -162,8 +165,9 @@ def main():
     p.add_argument('--attempt', type=int, required=True)
     p.add_argument('--commit', required=True)
     p.add_argument('--binaries', type=Path, required=True)
+    p.add_argument('--modes', type=Path, required=True)
     a = p.parse_args()
-    baselines, jobs, candidate, base = (json.loads(path.read_text()) for path in (a.baselines, a.jobs, a.candidate, a.base))
+    baselines, jobs, candidate, base, modes = (json.loads(path.read_text()) for path in (a.baselines, a.jobs, a.candidate, a.base, a.modes))
     facts = {}
     for baseline in baselines['baselines']:
         for scenario in SCENARIOS.values():
@@ -174,7 +178,7 @@ def main():
             key = '3.2.9-user-recovery'
             artifact = a.binaries / f'qualification-binary-{a.run_id}-{a.attempt}-{key}' / 'recovered-xray.json'
             facts[key] = json.loads(artifact.read_text())
-    evidence = collect(baselines, jobs, candidate, base, facts, a.run_id, a.commit, a.attempt)
+    evidence = collect(baselines, jobs, candidate, base, facts, a.run_id, a.commit, a.attempt, modes)
     with a.output.open('x') as f:
         json.dump(evidence, f, sort_keys=True, indent=2)
         f.write('\n')

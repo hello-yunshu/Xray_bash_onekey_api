@@ -40,6 +40,7 @@ on:
       - compatibility-baselines.json
       - .github/scripts/qualify_legacy_upgrade.sh
       - .github/scripts/collect_qualification_evidence.py
+      - .github/scripts/install_modes.py
       - .github/workflows/qualify-legacy-upgrade.yml
       - .github/workflows/qualify-release.yml
 
@@ -67,6 +68,7 @@ jobs:
       candidate_tested_version: ${{ steps.resolve.outputs.candidate_tested_version }}
       recovery_baseline: ${{ steps.resolve.outputs.recovery_baseline }}
       resolved_baselines: ${{ steps.resolve.outputs.resolved_baselines }}
+      install_modes: ${{ steps.modes.outputs.install_modes }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -147,6 +149,21 @@ jobs:
             echo "recovery_baseline=$recovery_baseline"
             echo "resolved_baselines=$resolved_baselines"
           } >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v5
+        with:
+          repository: hello-yunshu/Xray_bash_onekey
+          ref: ${{ steps.resolve.outputs.shell_commit }}
+          path: shell
+          persist-credentials: false
+      - name: Discover the released Shell's actual install modes
+        id: modes
+        env:
+          SHELL_SHA: ${{ steps.resolve.outputs.shell_sha }}
+        run: |
+          set -euo pipefail
+          [[ $(sha256sum shell/install.sh | awk '{print $1}') == "$SHELL_SHA" ]]
+          install_modes=$(python3 .github/scripts/install_modes.py shell/.github/test/test_install.sh)
+          echo "install_modes=$install_modes" >> "$GITHUB_OUTPUT"
 
   qualify:
     needs: inputs
@@ -207,7 +224,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [xtls_only, ws_grpc_xhttp, reality, reality_nginx, tls]
+        mode: ${{ fromJSON(needs.inputs.outputs.install_modes) }}
     name: Full install (${{ matrix.mode }})
     steps:
       - uses: actions/checkout@v5
@@ -320,9 +337,11 @@ jobs:
           TESTED_VERSION: ${{ needs.inputs.outputs.tested_version }}
           CANDIDATE_TESTED_VERSION: ${{ needs.inputs.outputs.candidate_tested_version }}
           RESOLVED_BASELINES: ${{ needs.inputs.outputs.resolved_baselines }}
+          INSTALL_MODES: ${{ needs.inputs.outputs.install_modes }}
         run: |
           set -euo pipefail
           printf '%s\n' "$RESOLVED_BASELINES" > "$RUNNER_TEMP/resolved-baselines.json"
+          printf '%s\n' "$INSTALL_MODES" > "$RUNNER_TEMP/install-modes.json"
           mkdir -p evidence
           jq -n --arg v "$CANDIDATE_VERSION" --arg ref "$CANDIDATE_REF" --arg sha "$CANDIDATE_SHA" --arg tested "$CANDIDATE_TESTED_VERSION" \
             '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha,testedVersion:$tested}' > "$RUNNER_TEMP/candidate.json"
@@ -353,7 +372,8 @@ jobs:
             if gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" | jq '[.[].jobs[]]' > "$RUNNER_TEMP/jobs.json" &&
               python3 .github/scripts/collect_qualification_evidence.py \
                 --baselines "$RUNNER_TEMP/resolved-baselines.json" --jobs "$RUNNER_TEMP/jobs.json" \
-                --candidate "$RUNNER_TEMP/candidate.json" --base "$RUNNER_TEMP/base.json" --binaries "$RUNNER_TEMP/binaries" --output evidence/compatibility.json \
+                --candidate "$RUNNER_TEMP/candidate.json" --base "$RUNNER_TEMP/base.json" --binaries "$RUNNER_TEMP/binaries" \
+                --modes "$RUNNER_TEMP/install-modes.json" --output evidence/compatibility.json \
                 --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --commit "$GITHUB_SHA"; then
               collected=true
               break
