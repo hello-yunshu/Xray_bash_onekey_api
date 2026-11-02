@@ -70,10 +70,15 @@
     {
       "version": "3.3.1",
       "tag": "v3.3.1",
-      "commit": "1af974d89c748c9d817d38ea62831a858d202af9",
-      "installSha256": "c83d7ca14fd5dcd35539f57b5c5ffdcdb90535d3db930a0b3e1382b156a830e5",
+      "commit": "dc1a02f6108927957121aee00ba3fd809575957e",
+      "installSha256": "ecdce508c570084bae428e9dde4379181d14c85ea68bba7b7b490f9dcdbd4e04",
       "scenarios": [
-        "direct"
+        "direct",
+        "shell-first",
+        "reinstall",
+        "failure-recovery",
+        "restart-recovery",
+        "fallback"
       ],
       "initial": {
         "xrayVersion": "26.3.27",
