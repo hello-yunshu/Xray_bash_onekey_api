@@ -86,7 +86,22 @@ existing assets, but this alone is not GitHub-enforced immutability.
 
 生产 `base` 只代表待替换的线上元数据，用于并发一致性和禁止降级检查，不再隐含“必须重新下载并安装这个版本”。每个受支持 Shell 的历史升级起点必须通过 `compatibility-baselines.json` 的 `initial` 显式指定；缺少配置或证据不匹配时拒绝发布，不能回退到生产推荐来猜测测试起点。
 
-当前三个 Shell 基线均从可获取、此前验证过的 Xray 26.3.27 / 固定安装器 e741 开始，验证升级到候选组合。此覆盖不代表从已消失的 26.10.29 精确重建升级环境。3.2.9 权限回归使用固定有缺陷安装器配合候选内核复现，不依赖已下架内核；仍要求实际观察到权限错误和服务失效，再验证恢复。所有旧 Shell、新装、直接升级、先升级 Shell、重装、失败恢复及回退场景保留。
+当前基线从可获取、此前验证过的 Xray 26.3.27 / 固定安装器 e741 开始，验证升级到候选组合。
+3.2.9 权限回归使用固定有缺陷安装器配合候选内核复现，不依赖已下架内核；仍要求实际观察到权限错误和服务失效，
+再验证恢复。
+
+#### 最低直接升级来源（3.3.0）
+
+`compatibility-baselines.json` 的 `minimumDirectUpgradeVersion` 明确最低支持直接升级的来源版本：
+
+- **3.3.0 及更高版本**：运行 `direct` 等正常直更场景。
+- **3.2.9 / 3.2.10 / 3.2.11**：`scenarios` 只声明 `shell-first` 与 `reinstall`。
+  它们必须先升级 Shell（`-u`）再更新 Xray，或走重装路径；不再要求它们直接升级，
+  也不使用 expected-incompatible 豁免把失败刷成通过。
+
+`verify_shell_baselines.py` 会在资格矩阵启动前校验这一策略：低于最低版本的基线若声明
+`direct`/`fresh`/`restart-recovery` 等场景会被拒绝；达到最低版本的基线必须包含 `direct`。
+
 
 ### 可信历史起点池
 

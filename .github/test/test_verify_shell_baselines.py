@@ -21,9 +21,12 @@ class VerifyBaselines(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.path = Path(self.tmp.name) / 'baselines.json'
         self.blob = b'shell_version="3.2.9"\n'
-        self.doc = {'schemaVersion': 1, 'repository': 'hello-yunshu/Xray_bash_onekey', 'baselines': [
+        self.doc = {'schemaVersion': 1, 'repository': 'hello-yunshu/Xray_bash_onekey',
+                    'minimumDirectUpgradeVersion': '3.2.9',
+                    'baselines': [
             {'version': '3.2.9', 'tag': 'v3.2.9', 'commit': 'a' * 40,
-             'installSha256': hashlib.sha256(self.blob).hexdigest()}]}
+             'installSha256': hashlib.sha256(self.blob).hexdigest(),
+             'scenarios': ['direct', 'shell-first', 'reinstall']}]}
         self.ref = {'object': {'type': 'commit', 'sha': 'a' * 40}}
         self.meta = {'isDraft': False, 'isPrerelease': False}
 
@@ -68,6 +71,44 @@ class VerifyBaselines(unittest.TestCase):
         self.doc['baselines'].append(self.doc['baselines'][0].copy())
         with self.assertRaisesRegex(ValueError, 'duplicate'):
             self.verify()
+
+    def test_policy_rejects_direct_upgrade_below_the_minimum(self):
+        doc = {
+            'minimumDirectUpgradeVersion': '3.3.0',
+            'baselines': [
+                {'version': '3.2.11', 'scenarios': ['direct', 'shell-first', 'reinstall']},
+                {'version': '3.3.0', 'scenarios': ['direct', 'shell-first', 'reinstall']},
+            ],
+        }
+        with self.assertRaisesRegex(ValueError, 'unsupported direct-upgrade'):
+            baseline.validate_policy(doc)
+
+    def test_policy_requires_shell_first_and_reinstall_for_older_shells(self):
+        doc = {
+            'minimumDirectUpgradeVersion': '3.3.0',
+            'baselines': [
+                {'version': '3.2.11', 'scenarios': ['shell-first']},
+                {'version': '3.3.0', 'scenarios': ['direct', 'shell-first', 'reinstall']},
+            ],
+        }
+        with self.assertRaisesRegex(ValueError, 'must cover shell-first and reinstall'):
+            baseline.validate_policy(doc)
+
+    def test_policy_requires_the_minimum_baseline_and_direct_upgrade(self):
+        doc = {
+            'minimumDirectUpgradeVersion': '3.3.0',
+            'baselines': [
+                {'version': '3.2.11', 'scenarios': ['shell-first', 'reinstall']},
+                {'version': '3.3.0', 'scenarios': ['shell-first', 'reinstall']},
+            ],
+        }
+        with self.assertRaisesRegex(ValueError, 'must cover direct upgrade'):
+            baseline.validate_policy(doc)
+        doc['baselines'][1]['scenarios'].append('direct')
+        baseline.validate_policy(doc)
+        doc['minimumDirectUpgradeVersion'] = '3.3.1'
+        with self.assertRaisesRegex(ValueError, 'not a declared baseline'):
+            baseline.validate_policy(doc)
 
 
 if __name__ == '__main__':

@@ -90,6 +90,10 @@ jobs:
 
   legacy-upgrade:
     needs: baselines
+    # Scenarios are declared per baseline: Shells below
+    # minimumDirectUpgradeVersion only run shell-first and reinstall, while the
+    # minimum version and newer also run the normal direct upgrade paths.
+    if: contains(matrix.baseline.scenarios, matrix.scenario)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:

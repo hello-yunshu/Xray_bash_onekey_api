@@ -26,6 +26,22 @@ def runner_label(job):
     return ','.join(labels) or 'unknown'
 
 
+def baseline_scenarios(baseline):
+    """Only collect jobs the baseline policy actually declares.
+
+    Shells below minimumDirectUpgradeVersion deliberately do not run the direct
+    upgrade paths; their evidence must not require a job that was skipped.
+    """
+    declared = baseline.get('scenarios')
+    known = set(SCENARIOS.values())
+    if declared is None:
+        return known
+    if (not isinstance(declared, list) or not declared or len(set(declared)) != len(declared) or
+            any(not isinstance(item, str) or item not in known for item in declared)):
+        raise ValueError('invalid baseline scenarios')
+    return set(declared)
+
+
 def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt, modes):
     if baselines.get('schemaVersion') != 1 or not baselines.get('baselines'):
         raise ValueError('missing baselines')
@@ -55,7 +71,10 @@ def collect(baselines, jobs, candidate, base, facts, run_id, commit, attempt, mo
             if not isinstance(initial.get(field), str) or not re.fullmatch(pattern, initial[field]):
                 raise ValueError('invalid initial baseline tuple')
         scenarios = {}
+        declared_scenarios = baseline_scenarios(baseline)
         for key, scenario in SCENARIOS.items():
+            if scenario not in declared_scenarios:
+                continue
             name = f'qualify / Legacy upgrade ({version}, {scenario})'
             matching = [job for job in jobs if job.get('name') == name]
             if len(matching) != 1 or matching[0].get('status') != 'completed' or matching[0].get('conclusion') != 'success':
@@ -170,7 +189,10 @@ def main():
     baselines, jobs, candidate, base, modes = (json.loads(path.read_text()) for path in (a.baselines, a.jobs, a.candidate, a.base, a.modes))
     facts = {}
     for baseline in baselines['baselines']:
+        declared_scenarios = baseline_scenarios(baseline)
         for scenario in SCENARIOS.values():
+            if scenario not in declared_scenarios:
+                continue
             key = f"{baseline['version']}-{scenario}"
             artifact = a.binaries / f'qualification-binary-{a.run_id}-{a.attempt}-{key}' / 'xray-binary.json'
             facts[key] = json.loads(artifact.read_text())
