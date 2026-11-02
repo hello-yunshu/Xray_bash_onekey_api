@@ -82,6 +82,15 @@ class CollectionTests(unittest.TestCase):
                     module.collect(self.baselines, self.jobs, self.candidate, self.base, self.facts,
                                    123, 'e' * 40, 1, modes)
 
+    def test_accepts_the_relay_mode_set_for_the_next_shell(self):
+        modes = ['relay', 'ws_grpc_xhttp', 'reality', 'reality_nginx', 'tls']
+        jobs = [job for job in self.jobs if not job['name'].startswith('Full install (')]
+        jobs.extend({'name': f'Full install ({mode})', 'status': 'completed', 'conclusion': 'success',
+                     'id': 500 + i} for i, mode in enumerate(modes))
+        result = module.collect(self.baselines, jobs, self.candidate, self.base, self.facts,
+                                123, 'e' * 40, 1, modes)
+        self.assertEqual([job['mode'] for job in result['modeJobs']], modes)
+
     def test_rejects_missing_or_inconsistent_binary(self):
         del self.facts['3.2.9-direct']
         with self.assertRaisesRegex(ValueError, 'binary evidence'):
