@@ -66,3 +66,6 @@ jobs:
           python3 .github/test/test_select_trusted_initials.py
           python3 .github/test/test_record_qualified_initial.py
           python3 .github/test/test_resolve_qualification_for_publish.py
+          python3 .github/test/test_install_modes.py
+          python3 .github/test/test_verify_shell_baselines.py
+          python3 .github/test/test_version_consistency.py
