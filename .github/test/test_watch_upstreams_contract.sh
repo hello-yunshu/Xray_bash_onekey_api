@@ -15,4 +15,9 @@ grep -Fq 'mode: ${{ fromJSON(needs.inputs.outputs.install_modes) }}' "$qualify"
 grep -Fq -- '--modes "$RUNNER_TEMP/install-modes.json"' "$qualify"
 ! grep -Eq 'mode: \[[^]]*xtls_only' "$qualify"
 for scenario in fresh reinstall remove; do grep -Fq "$scenario" "$qualify"; done
+legacy=${repo}/.github/workflows/qualify-legacy-upgrade.yml
+# Matrix combinations are expanded per baseline; GitHub Actions does not
+# allow job-level if expressions to read matrix values.
+grep -Fq 'include: ${{ fromJSON(needs.baselines.outputs.matrix) }}' "$legacy"
+! grep -Fq 'if: contains(matrix.' "$legacy"
 echo 'watch-upstreams workflow contract passed'

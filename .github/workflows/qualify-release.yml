@@ -347,9 +347,10 @@ jobs:
             '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha,testedVersion:$tested}' > "$RUNNER_TEMP/candidate.json"
           jq -n --arg v "$BASE_VERSION" --arg ref "$BASE_REF" --arg sha "$BASE_SHA" --arg tested "$TESTED_VERSION" \
             '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha,testedVersion:$tested}' > "$RUNNER_TEMP/base.json"
-          while IFS= read -r version; do
+          while IFS=$'\t' read -r version scenarios_json; do
             [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-            scenarios=(fresh direct shell-first reinstall failure-recovery restart-recovery fallback)
+            scenarios=()
+            while IFS= read -r scenario; do scenarios+=("$scenario"); done < <(jq -r '.[]' <<<"$scenarios_json")
             [[ "$version" != 3.2.9 ]] || scenarios+=(user-recovery)
             for scenario in "${scenarios[@]}"; do
               name="qualification-binary-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$version-$scenario"
@@ -365,7 +366,7 @@ jobs:
               done
               [[ "$downloaded" == true ]] || { echo "Qualification binary evidence download failed: $version $scenario" >&2; exit 1; }
             done
-          done < <(jq -er '.baselines[].version' compatibility-baselines.json)
+          done < <(jq -r '.baselines[] | [.version, (.scenarios | tojson)] | @tsv' "$RUNNER_TEMP/resolved-baselines.json")
           collected=false
           for attempt in {1..12}; do
             rm -f evidence/compatibility.json

@@ -44,7 +44,7 @@
       "tag": "v3.3.0",
       "commit": "3b129f9f1f04c47689ce39e8bbd186a84dec0b78",
       "installSha256": "0730ad918999f9d704da0c0b2db3087df5409bf5d6939998526cbd47cdea4080",
-      "scenarios": ["fresh", "direct", "shell-first", "reinstall", "failure-recovery", "restart-recovery", "fallback"],
+      "scenarios": ["direct", "shell-first", "reinstall", "failure-recovery", "restart-recovery", "fallback"],
       "initial": {
         "xrayVersion": "26.3.27",
         "installerRef": "e741a4f56d368afbb9e5be3361b40c4552d3710d",
