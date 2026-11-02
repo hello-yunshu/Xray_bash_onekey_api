@@ -12,7 +12,8 @@ spec.loader.exec_module(module)
 class CollectionTests(unittest.TestCase):
     def setUp(self):
         self.baselines = {'schemaVersion': 1, 'baselines': [{'version': '3.2.9', 'commit': 'a' * 40,
-                                                             'installSha256': 'b' * 64}]}
+                                                             'installSha256': 'b' * 64,
+                                                             'scenarios': list(module.SCENARIOS.values())}]}
         self.candidate = {'xrayVersion': '26.10.29', 'installerRef': 'c' * 40, 'installerSha256': 'd' * 64}
         self.base = dict(self.candidate, testedVersion='25.12.8')
         self.baselines['baselines'][0]['initial'] = dict(self.candidate)
@@ -90,6 +91,26 @@ class CollectionTests(unittest.TestCase):
         result = module.collect(self.baselines, jobs, self.candidate, self.base, self.facts,
                                 123, 'e' * 40, 1, modes)
         self.assertEqual([job['mode'] for job in result['modeJobs']], modes)
+
+    def test_legacy_baseline_only_collects_declared_scenarios(self):
+        declared = ['shell-first', 'reinstall']
+        self.baselines['baselines'][0]['scenarios'] = declared
+        jobs = [job for job in self.jobs if 'Legacy upgrade' not in job['name']]
+        jobs.extend({'name': f'qualify / Legacy upgrade (3.2.9, {scenario})', 'status': 'completed',
+                     'conclusion': 'success', 'id': 600 + i} for i, scenario in enumerate(declared))
+        self.facts = {f'3.2.9-{scenario}': self.facts[f'3.2.9-{scenario}'] for scenario in declared}
+        self.facts['3.2.9-user-recovery'] = dict(self.facts['3.2.9-shell-first'])
+        result = module.collect(self.baselines, jobs, self.candidate, self.base, self.facts,
+                                123, 'e' * 40, 1, self.modes)
+        self.assertEqual(set(result['baselines'][0]['scenarios']), {'shell-then-upgrade', 'reinstall'})
+
+    def test_rejects_invalid_baseline_scenarios(self):
+        for scenarios in ([], ['direct', 'direct'], ['mystery']):
+            with self.subTest(scenarios=scenarios):
+                self.baselines['baselines'][0]['scenarios'] = scenarios
+                with self.assertRaisesRegex(ValueError, 'invalid baseline scenarios'):
+                    module.collect(self.baselines, self.jobs, self.candidate, self.base, self.facts,
+                                   123, 'e' * 40, 1, self.modes)
 
     def test_rejects_missing_or_inconsistent_binary(self):
         del self.facts['3.2.9-direct']

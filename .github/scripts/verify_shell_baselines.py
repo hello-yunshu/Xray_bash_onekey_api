@@ -8,11 +8,43 @@ import sys
 import tempfile
 from pathlib import Path
 
+KNOWN_SCENARIOS = frozenset(('fresh', 'direct', 'shell-first', 'reinstall',
+                             'failure-recovery', 'restart-recovery', 'fallback'))
+LEGACY_SCENARIOS = frozenset(('shell-first', 'reinstall'))
+
+
+def version_key(value):
+    return tuple(map(int, value.split('.')))
+
+
+def validate_policy(doc):
+    """Shells below the minimum direct-upgrade source only qualify the supported paths."""
+    minimum = doc.get('minimumDirectUpgradeVersion')
+    if not isinstance(minimum, str) or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', minimum):
+        raise ValueError('invalid minimumDirectUpgradeVersion')
+    versions = {item.get('version') for item in doc.get('baselines', [])}
+    if minimum not in versions:
+        raise ValueError('minimumDirectUpgradeVersion is not a declared baseline')
+    for item in doc['baselines']:
+        scenarios = item.get('scenarios')
+        if (not isinstance(scenarios, list) or not scenarios or
+                len(set(scenarios)) != len(scenarios) or
+                any(not isinstance(scenario, str) or scenario not in KNOWN_SCENARIOS for scenario in scenarios)):
+            raise ValueError(f'invalid scenarios for Shell {item.get("version")}')
+        if version_key(item['version']) < version_key(minimum):
+            if set(scenarios) - LEGACY_SCENARIOS:
+                raise ValueError(f'Shell {item["version"]} declares an unsupported direct-upgrade scenario')
+            if not LEGACY_SCENARIOS <= set(scenarios):
+                raise ValueError(f'Shell {item["version"]} must cover shell-first and reinstall')
+        elif 'direct' not in scenarios:
+            raise ValueError(f'Shell {item["version"]} must cover direct upgrade')
+
 
 def main():
     doc = json.loads(Path(sys.argv[1]).read_text())
     if doc.get("schemaVersion") != 1 or doc.get("repository") != "hello-yunshu/Xray_bash_onekey":
         raise ValueError("unsupported baseline document")
+    validate_policy(doc)
     baselines = doc.get("baselines")
     if not isinstance(baselines, list) or not baselines:
         raise ValueError("baseline list is empty")
