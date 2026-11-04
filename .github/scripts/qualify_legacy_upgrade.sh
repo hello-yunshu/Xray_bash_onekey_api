@@ -230,8 +230,14 @@ if [[ $scenario == shell-first ]]; then
     echo "Upgrading the installed Shell to the exact API Release v$expected_shell"
     # The legacy auto-update path refuses a 3.2 -> 3.3 jump by design. The
     # supported user path is the interactive update, so drive its single
-    # confirmation prompt through stdin.
-    if ! printf 'y\n' | bash /etc/idleleo/install.sh --update >"$log" 2>&1; then
+    # confirmation prompt through stdin. 3.3.1 added a non-TTY guard that
+    # rejects a piped prompt unless --yes is passed; older shells do not
+    # understand --yes, so gate the flag on the installed baseline.
+    update_args=(--update)
+    if [[ $(printf '%s\n%s\n' "3.3.1" "$base" | sort -V | head -n1) == "3.3.1" ]]; then
+        update_args+=(--yes)
+    fi
+    if ! printf 'y\n' | bash /etc/idleleo/install.sh "${update_args[@]}" >"$log" 2>&1; then
         echo 'Shell update failed; candidate not evaluated' >&2
         diagnose
         exit 1
