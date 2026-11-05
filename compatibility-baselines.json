@@ -123,6 +123,25 @@
         "installerRef": "e741a4f56d368afbb9e5be3361b40c4552d3710d",
         "installerSha256": "7f70c95f6b418da8b4f4883343d602964915e28748993870fd554383afdbe555"
       }
+    },
+    {
+      "version": "3.3.4",
+      "tag": "v3.3.4",
+      "commit": "dddc43187b4006b23899a3c444ea00bc2a95b330",
+      "installSha256": "0af8e8f222f26f02904f80bfd0e3cf5cd119b24bbde462019f0b582e1b79cfa6",
+      "scenarios": [
+        "direct",
+        "shell-first",
+        "reinstall",
+        "failure-recovery",
+        "restart-recovery",
+        "fallback"
+      ],
+      "initial": {
+        "xrayVersion": "26.3.27",
+        "installerRef": "e741a4f56d368afbb9e5be3361b40c4552d3710d",
+        "installerSha256": "7f70c95f6b418da8b4f4883343d602964915e28748993870fd554383afdbe555"
+      }
     }
   ],
   "trustedInitials": [
