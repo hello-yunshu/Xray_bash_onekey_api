@@ -68,7 +68,7 @@ jobs:
     outputs:
       matrix: ${{ steps.list.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
       - name: Verify released baseline identities
@@ -102,11 +102,11 @@ jobs:
         include: ${{ fromJSON(needs.baselines.outputs.matrix) }}
     name: Legacy upgrade (${{ matrix.baseline.version }}, ${{ matrix.scenario }})
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           path: api
           persist-credentials: false
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: hello-yunshu/Xray_bash_onekey
           ref: ${{ matrix.baseline.commit }}
@@ -174,7 +174,7 @@ jobs:
           else
             sudo -E bash api/.github/scripts/qualify_legacy_upgrade.sh
           fi
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: >-
           success() && !(github.event_name == 'pull_request' &&
           github.workflow == 'Qualify legacy shell upgrades (evidence only)' &&

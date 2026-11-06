@@ -42,6 +42,10 @@ permissions:
   contents: write
   actions: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   promote:
     runs-on: ubuntu-24.04

@@ -70,7 +70,7 @@ jobs:
       resolved_baselines: ${{ steps.resolve.outputs.resolved_baselines }}
       install_modes: ${{ steps.modes.outputs.install_modes }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
       - name: Record automatic qualification identity
@@ -81,7 +81,7 @@ jobs:
           set -euo pipefail
           [[ "$AUTOMATION_KEY" =~ ^auto-xray-[0-9a-f]{64}$ ]]
           printf '%s\n' "$AUTOMATION_KEY" > "$RUNNER_TEMP/qualification-key.txt"
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: inputs.automation_key != ''
         with:
           name: qualification-key-${{ inputs.automation_key }}
@@ -149,7 +149,7 @@ jobs:
             echo "recovery_baseline=$recovery_baseline"
             echo "resolved_baselines=$resolved_baselines"
           } >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: hello-yunshu/Xray_bash_onekey
           ref: ${{ steps.resolve.outputs.shell_commit }}
@@ -187,11 +187,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           path: api
           persist-credentials: false
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: hello-yunshu/Xray_bash_onekey
           ref: ${{ fromJSON(needs.inputs.outputs.recovery_baseline).commit }}
@@ -211,7 +211,7 @@ jobs:
           QUALIFICATION_BINARY_EVIDENCE: ${{ runner.temp }}/recovered-xray.json
           UPGRADE_SCENARIO: user-recovery
         run: sudo -E bash api/.github/scripts/qualify_legacy_upgrade.sh
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: qualification-binary-${{ github.run_id }}-${{ github.run_attempt }}-3.2.9-user-recovery
           path: ${{ runner.temp }}/recovered-xray.json
@@ -227,11 +227,11 @@ jobs:
         mode: ${{ fromJSON(needs.inputs.outputs.install_modes) }}
     name: Full install (${{ matrix.mode }})
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           path: api
           persist-credentials: false
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: hello-yunshu/Xray_bash_onekey
           ref: ${{ needs.inputs.outputs.shell_commit }}
@@ -260,11 +260,11 @@ jobs:
         scenario: [fresh, reinstall, remove]
     name: Installer smoke (${{ matrix.scenario }})
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           path: api
           persist-credentials: false
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: hello-yunshu/Xray_bash_onekey
           ref: ${{ needs.inputs.outputs.shell_commit }}
@@ -296,7 +296,7 @@ jobs:
         image: [debian:12-slim, debian:13-slim, ubuntu:24.04, ubuntu:26.04, 'quay.io/centos/centos:stream10']
     name: Minimal bootstrap (${{ matrix.image }})
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: hello-yunshu/Xray_bash_onekey
           ref: ${{ needs.inputs.outputs.shell_commit }}
@@ -322,7 +322,7 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
       - name: Collect all successful exact jobs
@@ -382,7 +382,7 @@ jobs:
             [[ "$attempt" == 12 ]] || sleep 10
           done
           [[ "$collected" == true ]] || { echo 'Qualification evidence collection failed' >&2; exit 1; }
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: qualification-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: evidence/compatibility.json
