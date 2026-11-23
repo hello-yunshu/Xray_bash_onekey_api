@@ -33,6 +33,7 @@ on:
       - compatibility-baselines.json
       - .github/scripts/qualify_legacy_upgrade.sh
       - .github/scripts/verify_shell_baselines.py
+      - .github/scripts/qualification_policy.py
       - .github/workflows/qualify-legacy-upgrade.yml
   workflow_dispatch:
     inputs:
@@ -110,6 +111,7 @@ jobs:
           path: legacy
           persist-credentials: false
       - name: Install and upgrade using the historical shell
+        id: qualify
         env:
           LEGACY_REPO: ${{ github.workspace }}/legacy
           LEGACY_INSTALL_SHA256: ${{ matrix.baseline.installSha256 }}
@@ -139,44 +141,63 @@ jobs:
             XRAY_CANDIDATE_VERSION=${XRAY_CANDIDATE_VERSION:-26.10.31}
             XRAY_CANDIDATE_INSTALLER_REF=${XRAY_CANDIDATE_INSTALLER_REF:-e42df6a772e60dd7b058f852262c4dbeb0bc231d}
             XRAY_CANDIDATE_INSTALLER_SHA256=${XRAY_CANDIDATE_INSTALLER_SHA256:-954666bb028ba8561b2218372b7db76ba051f8252b2db9195321e672263aab94}
-            # Isolate restart recovery from the known incompatible installer.
-            if [[ "$UPGRADE_SCENARIO" == restart-recovery ]]; then
-              XRAY_CANDIDATE_VERSION="$BASE_XRAY_VERSION"
-              XRAY_CANDIDATE_INSTALLER_REF="$BASE_INSTALLER_REF"
-              XRAY_CANDIDATE_INSTALLER_SHA256="$BASE_INSTALLER_SHA256"
-            fi
           fi
           export XRAY_CANDIDATE_VERSION="${XRAY_CANDIDATE_VERSION:-$(jq -r .xray_online_version "$XRAY_VERSIONS_FILE")}"
           export XRAY_CANDIDATE_INSTALLER_REF="${XRAY_CANDIDATE_INSTALLER_REF:-$(jq -r .xray_installer_ref "$XRAY_VERSIONS_FILE")}"
           export XRAY_CANDIDATE_INSTALLER_SHA256="${XRAY_CANDIDATE_INSTALLER_SHA256:-$(jq -r .xray_installer_sha256 "$XRAY_VERSIONS_FILE")}"
+          candidate_json="$RUNNER_TEMP/candidate.json"
+          write_candidate() {
+            jq -n --arg v "$XRAY_CANDIDATE_VERSION" --arg ref "$XRAY_CANDIDATE_INSTALLER_REF" --arg sha "$XRAY_CANDIDATE_INSTALLER_SHA256" \
+              '{xrayVersion:$v,installerRef:$ref,installerSha256:$sha}' > "$candidate_json"
+          }
+          write_candidate
+          # Restart recovery tests the recovery mechanism, not installer compatibility.
+          # Use the known-working historical tuple only for an exactly declared
+          # incompatible candidate; all other candidates still exercise this path.
+          if [[ "$UPGRADE_SCENARIO" == restart-recovery ]] && [[ $(python3 api/.github/scripts/qualification_policy.py matches-baseline \
+              api/compatibility-baselines.json --baseline "$BASELINE_VERSION" --candidate "$candidate_json") == true ]]; then
+            XRAY_CANDIDATE_VERSION="$BASE_XRAY_VERSION"
+            XRAY_CANDIDATE_INSTALLER_REF="$BASE_INSTALLER_REF"
+            XRAY_CANDIDATE_INSTALLER_SHA256="$BASE_INSTALLER_SHA256"
+            write_candidate
+          fi
           if [[ -n "$CANDIDATE_TESTED_VERSION" ]]; then
             [[ "$CANDIDATE_TESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
             jq --arg v "$CANDIDATE_TESTED_VERSION" '.xray_tested_version = $v' "$XRAY_VERSIONS_FILE" > "$RUNNER_TEMP/qualification-versions.json"
             export XRAY_VERSIONS_FILE="$RUNNER_TEMP/qualification-versions.json"
           fi
-          if [[ "$EVENT_NAME" == pull_request && "$CALLER_WORKFLOW" == 'Qualify legacy shell upgrades (evidence only)' && "$BASELINE_VERSION" == 3.2.9 && "$UPGRADE_SCENARIO" =~ ^(fresh|direct|reinstall|fallback)$ ]]; then
+          case "$UPGRADE_SCENARIO" in
+            direct) evidence_scenario=legacy-upgrade ;;
+            shell-first) evidence_scenario=shell-then-upgrade ;;
+            *) evidence_scenario=$UPGRADE_SCENARIO ;;
+          esac
+          declaration=$(python3 api/.github/scripts/qualification_policy.py match api/compatibility-baselines.json \
+            --baseline "$BASELINE_VERSION" --scenario "$evidence_scenario" --candidate "$candidate_json")
+          expected_incompatible=false
+          if [[ "$declaration" != null ]]; then
+            expected_incompatible=true
+            diagnostic=$(jq -r '.diagnostic' <<<"$declaration")
             log=$(mktemp)
             trap 'rm -f "$log"' EXIT
+            # The job succeeds only when the exact reviewed failure is observed.
+            # An unexpected success or a different failure remains a release blocker.
             # shellcheck disable=SC2024 # runner owns this redirection target
             if sudo -E bash api/.github/scripts/qualify_legacy_upgrade.sh >"$log" 2>&1; then
-              echo 'Expected the known incompatible combination to fail' >&2
+              echo 'Expected the declared incompatible combination to fail' >&2
               exit 1
             fi
             cat "$log"
-            grep -Fq 'diagnostic: permission denied observed' "$log" || {
-              echo 'Failure was not the expected permission incompatibility' >&2
+            grep -Fq "diagnostic: $diagnostic" "$log" || {
+              echo 'Failure did not match the declared diagnostic' >&2
               exit 1
             }
-            echo 'PASS: known incompatible legacy combination was rejected'
+            echo "PASS: declared incompatible legacy combination was rejected: $diagnostic"
           else
             sudo -E bash api/.github/scripts/qualify_legacy_upgrade.sh
           fi
+          echo "expected_incompatible=$expected_incompatible" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v6
-        if: >-
-          success() && !(github.event_name == 'pull_request' &&
-          github.workflow == 'Qualify legacy shell upgrades (evidence only)' &&
-          matrix.baseline.version == '3.2.9' &&
-          contains(fromJSON('["fresh","direct","reinstall","fallback"]'), matrix.scenario))
+        if: success() && steps.qualify.outputs.expected_incompatible != 'true'
         with:
           name: qualification-binary-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.baseline.version }}-${{ matrix.scenario }}
           path: ${{ runner.temp }}/xray-binary.json

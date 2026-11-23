@@ -36,6 +36,30 @@
       }
     }
   ],
+  "expectedIncompatible": [
+    {
+      "baseline": "3.2.9",
+      "scenarios": ["fresh", "legacy-upgrade", "reinstall", "fallback"],
+      "candidate": {
+        "xrayVersion": "26.10.31",
+        "installerRef": "04e6f3bd9534811ed901a48c47b2c042dd64eb3a",
+        "installerSha256": "934ecb26ded1089f849ac238d5170f1159fe4b6ca300d4f1e67730bd41fe58cf"
+      },
+      "diagnostic": "permission denied observed",
+      "reason": "This installer hardcodes User=xray, while Shell 3.2.9 leaves its configuration readable only by nobody; upgrading Shell first remains covered and required."
+    },
+    {
+      "baseline": "3.2.9",
+      "scenarios": ["fresh", "legacy-upgrade", "reinstall", "fallback"],
+      "candidate": {
+        "xrayVersion": "26.10.31",
+        "installerRef": "e42df6a772e60dd7b058f852262c4dbeb0bc231d",
+        "installerSha256": "954666bb028ba8561b2218372b7db76ba051f8252b2db9195321e672263aab94"
+      },
+      "diagnostic": "permission denied observed",
+      "reason": "Fixed PR regression fixture for the Shell 3.2.9 service-account ownership incompatibility; this declaration never applies to another candidate tuple."
+    }
+  ],
   "trustedInitials": [
     {
       "xrayVersion": "26.10.31",
