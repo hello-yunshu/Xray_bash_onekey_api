@@ -1,0 +1,9 @@
+# macOS
+.DS_Store
+
+# Local agent workspace data (never committed)
+.workbuddy/
+
+# Python
+__pycache__/
+*.pyc
